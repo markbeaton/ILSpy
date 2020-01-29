@@ -54,10 +54,10 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 						if (branch.TargetBlock == jumpTableBlock) {
 							if (result.NextBlockOrExitContainer is BlockContainer exitContainer) {
 								context.Step("branch jumpTableBlock => leave exitContainer", branch);
-								branch.ReplaceWith(new Leave(exitContainer));
+								branch.ReplaceWith(new Leave(exitContainer).WithILRange(branch));
 							} else {
 								context.Step("branch jumpTableBlock => branch nextBlock", branch);
-								branch.ReplaceWith(new Branch((Block)result.NextBlockOrExitContainer));
+								branch.ReplaceWith(new Branch((Block)result.NextBlockOrExitContainer).WithILRange(branch));
 							}
 						}
 					}
@@ -101,9 +101,9 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 					if (result.ObjectVariableStore != null) {
 						foreach (var load in result.ObjectVariableStore.Variable.LoadInstructions.ToArray()) {
 							if (load.Parent is CastClass cc && cc.Type == result.Handler.Variable.Type)
-								cc.ReplaceWith(new LdLoc(result.Handler.Variable));
+								cc.ReplaceWith(new LdLoc(result.Handler.Variable).WithILRange(cc).WithILRange(load));
 							else
-								load.ReplaceWith(new LdLoc(result.Handler.Variable));
+								load.ReplaceWith(new LdLoc(result.Handler.Variable).WithILRange(load));
 						}
 					}
 
