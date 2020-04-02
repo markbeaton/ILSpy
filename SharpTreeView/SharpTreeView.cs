@@ -753,11 +753,9 @@ namespace ICSharpCode.TreeView
 			try {
 				var nodes = treeView.GetTopLevelSelection().ToArray();
 				if (nodes.Length > 0) {
-					if (selectedIndex == -1)
-						selectedIndex = treeView.flattener.IndexOf(nodes[i]);
+					selectedIndex = treeView.flattener.IndexOf(nodes[0]);
 					nodes[0].Delete(nodes);
 				}
-		}
 			} finally {
 				treeView.updatesLocked = false;
 				treeView.UpdateFocusedNode(null, Math.Max(0, selectedIndex - 1));

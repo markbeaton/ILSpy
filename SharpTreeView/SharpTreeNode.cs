@@ -24,6 +24,7 @@ using System.Windows;
 using System.ComponentModel;
 using System.Collections.Specialized;
 using System.Windows.Media;
+using System.Windows.Controls;
 
 namespace ICSharpCode.TreeView
 {

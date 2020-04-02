@@ -321,7 +321,7 @@ namespace ICSharpCode.ILSpy.TreeNodes
 	{
 		public bool IsVisible(TextViewContext context)
 		{
-			if (context.SelectedTreeNodes == null)
+			if (context.SelectedTreeNodes == null || context.SelectedTreeNodes.Length == 0)
 				return false;
 			return context.SelectedTreeNodes.All(n => n is AssemblyTreeNode);
 		}
@@ -333,11 +333,9 @@ namespace ICSharpCode.ILSpy.TreeNodes
 
 		public void Execute(TextViewContext context)
 		{
-			if (context.SelectedTreeNodes == null)
+			if (context.SelectedTreeNodes == null || context.SelectedTreeNodes.Length == 0)
 				return;
-			foreach (var node in context.SelectedTreeNodes) {
-				node.Delete();
-			}
+			context.SelectedTreeNodes[0].Delete(context.SelectedTreeNodes);
 		}
 	}
 
