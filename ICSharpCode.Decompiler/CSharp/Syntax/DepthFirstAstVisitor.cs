@@ -115,7 +115,17 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		{
 			VisitChildren (memberType);
 		}
-		
+
+		public virtual void VisitTupleType(TupleAstType tupleType)
+		{
+			VisitChildren(tupleType);
+		}
+
+		public virtual void VisitTupleTypeElement(TupleTypeElement tupleTypeElement)
+		{
+			VisitChildren (tupleTypeElement);
+		}
+
 		public virtual void VisitAttribute (Attribute attribute)
 		{
 			VisitChildren (attribute);
@@ -380,7 +390,12 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		{
 			VisitChildren (variableDeclarationStatement);
 		}
-		
+
+		public virtual void VisitLocalFunctionDeclarationStatement(LocalFunctionDeclarationStatement localFunctionDeclarationStatement)
+		{
+			VisitChildren(localFunctionDeclarationStatement);
+		}
+
 		public virtual void VisitWhileStatement (WhileStatement whileStatement)
 		{
 			VisitChildren (whileStatement);
@@ -445,7 +460,22 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		{
 			VisitChildren (indexerExpression);
 		}
-		
+
+		public virtual void VisitInterpolatedStringExpression(InterpolatedStringExpression interpolatedStringExpression)
+		{
+			VisitChildren(interpolatedStringExpression);
+		}
+
+		public virtual void VisitInterpolation(Interpolation interpolation)
+		{
+			VisitChildren(interpolation);
+		}
+
+		public virtual void VisitInterpolatedStringText(InterpolatedStringText interpolatedStringText)
+		{
+			VisitChildren(interpolatedStringText);
+		}
+
 		public virtual void VisitInvocationExpression (InvocationExpression invocationExpression)
 		{
 			VisitChildren (invocationExpression);
@@ -519,6 +549,11 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		public virtual void VisitThrowExpression (ThrowExpression throwExpression)
 		{
 			VisitChildren (throwExpression);
+		}
+
+		public virtual void VisitTupleExpression(TupleExpression tupleExpression)
+		{
+			VisitChildren (tupleExpression);
 		}
 
 		public virtual void VisitTypeOfExpression (TypeOfExpression typeOfExpression)
@@ -732,7 +767,17 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		{
 			return VisitChildren (memberType);
 		}
-		
+
+		public virtual T VisitTupleType(TupleAstType tupleType)
+		{
+			return VisitChildren (tupleType);
+		}
+
+		public virtual T VisitTupleTypeElement(TupleTypeElement tupleTypeElement)
+		{
+			return VisitChildren (tupleTypeElement);
+		}
+
 		public virtual T VisitAttribute (Attribute attribute)
 		{
 			return VisitChildren (attribute);
@@ -997,7 +1042,12 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		{
 			return VisitChildren (variableDeclarationStatement);
 		}
-		
+
+		public virtual T VisitLocalFunctionDeclarationStatement(LocalFunctionDeclarationStatement localFunctionDeclarationStatement)
+		{
+			return VisitChildren(localFunctionDeclarationStatement);
+		}
+
 		public virtual T VisitWhileStatement (WhileStatement whileStatement)
 		{
 			return VisitChildren (whileStatement);
@@ -1062,7 +1112,22 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		{
 			return VisitChildren (indexerExpression);
 		}
-		
+
+		public virtual T VisitInterpolatedStringExpression(InterpolatedStringExpression interpolatedStringExpression)
+		{
+			return VisitChildren(interpolatedStringExpression);
+		}
+
+		public virtual T VisitInterpolation(Interpolation interpolation)
+		{
+			return VisitChildren(interpolation);
+		}
+
+		public virtual T VisitInterpolatedStringText(InterpolatedStringText interpolatedStringText)
+		{
+			return VisitChildren(interpolatedStringText);
+		}
+
 		public virtual T VisitInvocationExpression (InvocationExpression invocationExpression)
 		{
 			return VisitChildren (invocationExpression);
@@ -1136,6 +1201,11 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		public virtual T VisitThrowExpression (ThrowExpression throwExpression)
 		{
 			return VisitChildren (throwExpression);
+		}
+
+		public virtual T VisitTupleExpression (TupleExpression tupleExpression)
+		{
+			return VisitChildren (tupleExpression);
 		}
 
 		public virtual T VisitTypeOfExpression (TypeOfExpression typeOfExpression)
@@ -1349,7 +1419,17 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		{
 			return VisitChildren (memberType, data);
 		}
-		
+
+		public virtual S VisitTupleType(TupleAstType tupleType, T data)
+		{
+			return VisitChildren (tupleType, data);
+		}
+
+		public virtual S VisitTupleTypeElement(TupleTypeElement tupleTypeElement, T data)
+		{
+			return VisitChildren (tupleTypeElement, data);
+		}
+
 		public virtual S VisitAttribute (Attribute attribute, T data)
 		{
 			return VisitChildren (attribute, data);
@@ -1614,7 +1694,12 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		{
 			return VisitChildren (variableDeclarationStatement, data);
 		}
-		
+
+		public virtual S VisitLocalFunctionDeclarationStatement(LocalFunctionDeclarationStatement localFunctionDeclarationStatement, T data)
+		{
+			return VisitChildren(localFunctionDeclarationStatement, data);
+		}
+
 		public virtual S VisitWhileStatement (WhileStatement whileStatement, T data)
 		{
 			return VisitChildren (whileStatement, data);
@@ -1679,7 +1764,22 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		{
 			return VisitChildren (indexerExpression, data);
 		}
-		
+
+		public virtual S VisitInterpolatedStringExpression(InterpolatedStringExpression interpolatedStringExpression, T data)
+		{
+			return VisitChildren(interpolatedStringExpression, data);
+		}
+
+		public virtual S VisitInterpolation(Interpolation interpolation, T data)
+		{
+			return VisitChildren(interpolation, data);
+		}
+
+		public virtual S VisitInterpolatedStringText(InterpolatedStringText interpolatedStringText, T data)
+		{
+			return VisitChildren(interpolatedStringText, data);
+		}
+
 		public virtual S VisitInvocationExpression (InvocationExpression invocationExpression, T data)
 		{
 			return VisitChildren (invocationExpression, data);
@@ -1753,6 +1853,11 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		public virtual S VisitThrowExpression (ThrowExpression throwExpression, T data)
 		{
 			return VisitChildren (throwExpression, data);
+		}
+
+		public virtual S VisitTupleExpression (TupleExpression tupleExpression, T data)
+		{
+			return VisitChildren (tupleExpression, data);
 		}
 
 		public virtual S VisitTypeOfExpression (TypeOfExpression typeOfExpression, T data)

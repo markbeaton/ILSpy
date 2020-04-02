@@ -26,39 +26,39 @@ namespace ICSharpCode.Decompiler.TypeSystem
 	public class SimpleTypeResolveContext : ITypeResolveContext
 	{
 		readonly ICompilation compilation;
-		readonly IAssembly currentAssembly;
+		readonly IModule currentModule;
 		readonly ITypeDefinition currentTypeDefinition;
 		readonly IMember currentMember;
 		
 		public SimpleTypeResolveContext(ICompilation compilation)
 		{
 			if (compilation == null)
-				throw new ArgumentNullException("compilation");
+				throw new ArgumentNullException(nameof(compilation));
 			this.compilation = compilation;
 		}
 		
-		public SimpleTypeResolveContext(IAssembly assembly)
+		public SimpleTypeResolveContext(IModule module)
 		{
-			if (assembly == null)
-				throw new ArgumentNullException("assembly");
-			this.compilation = assembly.Compilation;
-			this.currentAssembly = assembly;
+			if (module == null)
+				throw new ArgumentNullException(nameof(module));
+			this.compilation = module.Compilation;
+			this.currentModule = module;
 		}
 		
 		public SimpleTypeResolveContext(IEntity entity)
 		{
 			if (entity == null)
-				throw new ArgumentNullException("entity");
+				throw new ArgumentNullException(nameof(entity));
 			this.compilation = entity.Compilation;
-			this.currentAssembly = entity.ParentAssembly;
+			this.currentModule = entity.ParentModule;
 			this.currentTypeDefinition = (entity as ITypeDefinition) ?? entity.DeclaringTypeDefinition;
 			this.currentMember = entity as IMember;
 		}
 		
-		private SimpleTypeResolveContext(ICompilation compilation, IAssembly currentAssembly, ITypeDefinition currentTypeDefinition, IMember currentMember)
+		private SimpleTypeResolveContext(ICompilation compilation, IModule currentModule, ITypeDefinition currentTypeDefinition, IMember currentMember)
 		{
 			this.compilation = compilation;
-			this.currentAssembly = currentAssembly;
+			this.currentModule = currentModule;
 			this.currentTypeDefinition = currentTypeDefinition;
 			this.currentMember = currentMember;
 		}
@@ -67,8 +67,8 @@ namespace ICSharpCode.Decompiler.TypeSystem
 			get { return compilation; }
 		}
 		
-		public IAssembly CurrentAssembly {
-			get { return currentAssembly; }
+		public IModule CurrentModule {
+			get { return currentModule; }
 		}
 		
 		public ITypeDefinition CurrentTypeDefinition {
@@ -81,12 +81,12 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		
 		public ITypeResolveContext WithCurrentTypeDefinition(ITypeDefinition typeDefinition)
 		{
-			return new SimpleTypeResolveContext(compilation, currentAssembly, typeDefinition, currentMember);
+			return new SimpleTypeResolveContext(compilation, currentModule, typeDefinition, currentMember);
 		}
 		
 		public ITypeResolveContext WithCurrentMember(IMember member)
 		{
-			return new SimpleTypeResolveContext(compilation, currentAssembly, currentTypeDefinition, member);
+			return new SimpleTypeResolveContext(compilation, currentModule, currentTypeDefinition, member);
 		}
 	}
 }

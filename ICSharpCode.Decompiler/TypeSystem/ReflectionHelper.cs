@@ -53,7 +53,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		/// </remarks>
 		public static IType FindType(this ICompilation compilation, Type type)
 		{
-			return type.ToTypeReference().Resolve(compilation.TypeResolveContext);
+			return type.ToTypeReference().Resolve(new SimpleTypeResolveContext(compilation));
 		}
 		#endregion
 		
@@ -110,7 +110,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 				string name = SplitTypeParameterCountFromReflectionName(type.Name, out typeParameterCount);
 				return new NestedTypeReference(baseTypeRef, name, typeParameterCount);
 			} else {
-				IAssemblyReference assemblyReference = new DefaultAssemblyReference(type.Assembly.FullName);
+				IModuleReference assemblyReference = new DefaultAssemblyReference(type.Assembly.FullName);
 				int typeParameterCount;
 				string name = SplitTypeParameterCountFromReflectionName(type.Name, out typeParameterCount);
 				return new GetClassTypeReference(assemblyReference, type.Namespace, name, typeParameterCount);
@@ -175,7 +175,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		/// <summary>
 		/// Gets the type code for the specified type, or TypeCode.Empty if none of the other type codes match.
 		/// </summary>
-		public static TypeCode GetTypeCode(IType type)
+		public static TypeCode GetTypeCode(this IType type)
 		{
 			ITypeDefinition def = type as ITypeDefinition;
 			if (def != null) {
@@ -203,14 +203,14 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		/// For looking up closed, assembly qualified type names, the root type resolve context for the compilation
 		/// is sufficient.
 		/// When looking up a type name that isn't assembly qualified, the type reference will look in
-		/// <see cref="ITypeResolveContext.CurrentAssembly"/> first, and if the type is not found there,
+		/// <see cref="ITypeResolveContext.CurrentModule"/> first, and if the type is not found there,
 		/// it will look in all other assemblies of the compilation.
 		/// </remarks>
 		/// <seealso cref="FullTypeName(string)"/>
 		public static ITypeReference ParseReflectionName(string reflectionTypeName)
 		{
 			if (reflectionTypeName == null)
-				throw new ArgumentNullException("reflectionTypeName");
+				throw new ArgumentNullException(nameof(reflectionTypeName));
 			int pos = 0;
 			ITypeReference r = ParseReflectionName(reflectionTypeName, ref pos);
 			if (pos < reflectionTypeName.Length)
@@ -347,7 +347,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		
 		static ITypeReference CreateGetClassTypeReference(string assemblyName, string typeName, int tpc)
 		{
-			IAssemblyReference assemblyReference;
+			IModuleReference assemblyReference;
 			if (assemblyName != null) {
 				assemblyReference = new DefaultAssemblyReference(assemblyName);
 			} else {

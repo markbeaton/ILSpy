@@ -19,6 +19,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ICSharpCode.Decompiler.CSharp.Resolver;
+using ICSharpCode.Decompiler.CSharp.TypeSystem;
+using ICSharpCode.Decompiler.Semantics;
 using ICSharpCode.Decompiler.TypeSystem;
 using ICSharpCode.Decompiler.Util;
 
@@ -33,6 +36,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 
 		void IStatementTransform.Run(Block block, int pos, StatementTransformContext context)
 		{
+			if (!context.Settings.ObjectOrCollectionInitializers) return;
 			this.context = context;
 			try {
 				DoTransform(block, pos);
@@ -49,18 +53,22 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				IType instType;
 				switch (initInst) {
 					case NewObj newObjInst:
-						if (newObjInst.ILStackWasEmpty && v.Kind == VariableKind.Local && !context.Function.Method.IsConstructor) {
+						if (newObjInst.ILStackWasEmpty && v.Kind == VariableKind.Local && !context.Function.Method.IsConstructor && !context.Function.Method.IsCompilerGeneratedOrIsInCompilerGeneratedClass()) {
 							// on statement level (no other expressions on IL stack),
 							// prefer to keep local variables (but not stack slots),
 							// unless we are in a constructor (where inlining object initializers might be critical
-							// for the base ctor call)
+							// for the base ctor call) or a compiler-generated delegate method, which might be used in a query expression.
 							return false;
 						}
 						// Do not try to transform display class usages or delegate construction.
 						// DelegateConstruction transform cannot deal with this.
-						if (DelegateConstruction.IsSimpleDisplayClass(newObjInst.Method.DeclaringType))
+						if (TransformDisplayClassUsage.IsSimpleDisplayClass(newObjInst.Method.DeclaringType))
 							return false;
-						if (DelegateConstruction.IsDelegateConstruction(newObjInst) || DelegateConstruction.IsPotentialClosure(context, newObjInst))
+						if (DelegateConstruction.IsDelegateConstruction(newObjInst) || TransformDisplayClassUsage.IsPotentialClosure(context, newObjInst))
+							return false;
+						// Cannot build a collection/object initializer attached to an AnonymousTypeCreateExpression:s 
+						// anon = new { A = 5 } { 3,4,5 } is invalid syntax.
+						if (newObjInst.Method.DeclaringType.ContainsAnonymousType())
 							return false;
 						instType = newObjInst.Method.DeclaringType;
 						break;
@@ -118,7 +126,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 					switch (body.Instructions[i + pos]) {
 						case CallInstruction call:
 							if (!(call is CallVirt || call is Call)) continue;
-							var newCall = (CallInstruction)call.Clone();
+							var newCall = call;
 							var newTarget = newCall.Arguments[0];
 							foreach (var load in newTarget.Descendants.OfType<IInstructionWithVariableOperand>())
 								if ((load is LdLoc || load is LdLoca) && load.Variable == v)
@@ -126,14 +134,14 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 							initializerBlock.Instructions.Add(newCall);
 							break;
 						case StObj stObj:
-							var newStObj = (StObj)stObj.Clone();
+							var newStObj = stObj;
 							foreach (var load in newStObj.Target.Descendants.OfType<IInstructionWithVariableOperand>())
 								if ((load is LdLoc || load is LdLoca) && load.Variable == v)
 									load.Variable = finalSlot;
 							initializerBlock.Instructions.Add(newStObj);
 							break;
 						case StLoc stLoc:
-							var newStLoc = (StLoc)stLoc.Clone();
+							var newStLoc = stLoc;
 							initializerBlock.Instructions.Add(newStLoc);
 							break;
 					}
@@ -167,12 +175,15 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 			// in the list of possible index variables.
 			// Index variables are used to implement dictionary initializers.
 			if (instructions[pos] is StLoc stloc && stloc.Variable.Kind == VariableKind.Local && stloc.Variable.IsSingleDefinition) {
+				if (!context.Settings.DictionaryInitializers)
+					return false;
 				if (stloc.Value.Descendants.OfType<IInstructionWithVariableOperand>().Any(ld => ld.Variable == target && (ld is LdLoc || ld is LdLoca)))
 					return false;
 				possibleIndexVariables.Add(stloc.Variable, (stloc.ChildIndex, stloc.Value));
 				return true;
 			}
-			(var kind, var newPath, var values, var targetVariable) = AccessPathElement.GetAccessPath(instructions[pos], rootType, possibleIndexVariables);
+			var resolveContext = new CSharpTypeResolveContext(context.TypeSystem.MainModule, context.UsingScope);
+			(var kind, var newPath, var values, var targetVariable) = AccessPathElement.GetAccessPath(instructions[pos], rootType, context.Settings, resolveContext, possibleIndexVariables);
 			if (kind == AccessPathKind.Invalid || target != targetVariable)
 				return false;
 			// Treat last element separately:
@@ -205,14 +216,24 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				case AccessPathKind.Setter:
 					if (isCollection || !pathStack.Peek().Add(lastElement))
 						return false;
-					if (values.Count == 1) {
-						blockKind = BlockKind.ObjectInitializer;
-						return true;
-					}
-					return false;
+					if (values.Count != 1 || !IsValidObjectInitializerTarget(currentPath))
+						return false;
+					blockKind = BlockKind.ObjectInitializer;
+					return true;
 				default:
 					return false;
 			}
+		}
+
+		bool IsValidObjectInitializerTarget(List<AccessPathElement> path)
+		{
+			if (path.Count == 0)
+				return true;
+			var element = path.Last();
+			var previous = path.SkipLast(1).LastOrDefault();
+			if (!(element.Member is IProperty p))
+				return true;
+			return !p.IsIndexer || (previous.Member?.ReturnType.Equals(element.Member.DeclaringType) == true);
 		}
 	}
 
@@ -225,19 +246,23 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 
 	public struct AccessPathElement : IEquatable<AccessPathElement>
 	{
-		public AccessPathElement(IMember member, ILInstruction[] indices = null)
+		public AccessPathElement(OpCode opCode, IMember member, ILInstruction[] indices = null)
 		{
+			this.OpCode = opCode;
 			this.Member = member;
 			this.Indices = indices;
 		}
 
+		public readonly OpCode OpCode;
 		public readonly IMember Member;
 		public readonly ILInstruction[] Indices;
 
 		public override string ToString() => $"[{Member}, {Indices}]";
 
 		public static (AccessPathKind Kind, List<AccessPathElement> Path, List<ILInstruction> Values, ILVariable Target) GetAccessPath(
-			ILInstruction instruction, IType rootType, Dictionary<ILVariable, (int Index, ILInstruction Value)> possibleIndexVariables = null)
+			ILInstruction instruction, IType rootType, DecompilerSettings settings,
+			CSharpTypeResolveContext resolveContext = null,
+			Dictionary<ILVariable, (int Index, ILInstruction Value)> possibleIndexVariables = null)
 		{
 			List<AccessPathElement> path = new List<AccessPathElement>();
 			ILVariable target = null;
@@ -250,12 +275,14 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 					case CallInstruction call:
 						if (!(call is CallVirt || call is Call)) goto default;
 						method = call.Method;
-						if (!IsMethodApplicable(method, call.Arguments, rootType)) goto default;
+						if (resolveContext != null && !IsMethodApplicable(method, call.Arguments, rootType, resolveContext, settings)) goto default;
 						instruction = call.Arguments[0];
 						if (method.IsAccessor) {
 							var property = method.AccessorOwner as IProperty;
-							var isGetter = property?.Getter == method;
+							if (!CanBeUsedInInitializer(property, resolveContext, kind, path)) goto default;
+							var isGetter = method.Equals(property?.Getter);
 							var indices = call.Arguments.Skip(1).Take(call.Arguments.Count - (isGetter ? 1 : 2)).ToArray();
+							if (indices.Length > 0 && !settings.DictionaryInitializers) goto default;
 							if (possibleIndexVariables != null) {
 								// Mark all index variables as used
 								foreach (var index in indices.OfType<IInstructionWithVariableOperand>()) {
@@ -263,9 +290,9 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 										possibleIndexVariables[index.Variable] = (-1, info.Value);
 								}
 							}
-							path.Insert(0, new AccessPathElement(method.AccessorOwner, indices));
+							path.Insert(0, new AccessPathElement(call.OpCode, method.AccessorOwner, indices));
 						} else {
-							path.Insert(0, new AccessPathElement(method));
+							path.Insert(0, new AccessPathElement(call.OpCode, method));
 						}
 						if (values == null) {
 							if (method.IsAccessor) {
@@ -280,8 +307,8 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 						}
 						break;
 					case LdObj ldobj: {
-						if (ldobj.Target is LdFlda ldflda) {
-							path.Insert(0, new AccessPathElement(ldflda.Field));
+						if (ldobj.Target is LdFlda ldflda && (kind != AccessPathKind.Setter || !ldflda.Field.IsReadOnly)) {
+							path.Insert(0, new AccessPathElement(ldobj.OpCode, ldflda.Field));
 							instruction = ldflda.Target;
 							break;
 						}
@@ -289,7 +316,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 					}
 					case StObj stobj: {
 						if (stobj.Target is LdFlda ldflda) {
-							path.Insert(0, new AccessPathElement(ldflda.Field));
+							path.Insert(0, new AccessPathElement(stobj.OpCode, ldflda.Field));
 							instruction = ldflda.Target;
 							if (values == null) {
 								values = new List<ILInstruction>(new[] { stobj.Value });
@@ -308,7 +335,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 						instruction = null;
 						break;
 					case LdFlda ldflda:
-						path.Insert(0, new AccessPathElement(ldflda.Field));
+						path.Insert(0, new AccessPathElement(ldflda.OpCode, ldflda.Field));
 						instruction = ldflda.Target;
 						break;
 					default:
@@ -322,18 +349,40 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 			return (kind, path, values, target);
 		}
 
-		static bool IsMethodApplicable(IMethod method, IList<ILInstruction> arguments, IType rootType)
+		private static bool CanBeUsedInInitializer(IProperty property, CSharpTypeResolveContext resolveContext, AccessPathKind kind, List<AccessPathElement> path)
 		{
-			if (!method.IsExtensionMethod && method.IsStatic)
+			if (property.CanSet && (property.Accessibility == property.Setter.Accessibility || IsAccessorAccessible(property.Setter, resolveContext)))
+				return true;
+			return kind != AccessPathKind.Setter;
+		}
+
+		private static bool IsAccessorAccessible(IMethod setter, CSharpTypeResolveContext resolveContext)
+		{
+			if (resolveContext == null)
+				return true;
+			var lookup = new MemberLookup(resolveContext.CurrentTypeDefinition, resolveContext.CurrentModule);
+			return lookup.IsAccessible(setter, allowProtectedAccess: setter.DeclaringTypeDefinition == resolveContext.CurrentTypeDefinition);
+		}
+
+		static bool IsMethodApplicable(IMethod method, IReadOnlyList<ILInstruction> arguments, IType rootType, CSharpTypeResolveContext resolveContext, DecompilerSettings settings)
+		{
+			if (method.IsStatic && !method.IsExtensionMethod)
 				return false;
-			if (method.IsAccessor)
+			if (method.AccessorOwner is IProperty)
 				return true;
 			if (!"Add".Equals(method.Name, StringComparison.Ordinal) || arguments.Count == 0)
 				return false;
+			if (method.IsExtensionMethod)
+				return settings.ExtensionMethodsInCollectionInitializers
+					&& CSharp.Transforms.IntroduceExtensionMethods.CanTransformToExtensionMethodCall(method, resolveContext, ignoreTypeArguments: true);
 			var targetType = GetReturnTypeFromInstruction(arguments[0]) ?? rootType;
 			if (targetType == null)
 				return false;
-			return targetType.GetAllBaseTypes().Any(i => i.IsKnownType(KnownTypeCode.IEnumerable) || i.IsKnownType(KnownTypeCode.IEnumerableOfT));
+			if (!targetType.GetAllBaseTypes().Any(i => i.IsKnownType(KnownTypeCode.IEnumerable) || i.IsKnownType(KnownTypeCode.IEnumerableOfT)))
+				return false;
+			return CSharp.CallBuilder.CanInferTypeArgumentsFromParameters(
+				method, method.Parameters.SelectReadOnlyArray(p => new ResolveResult(p.Type)),
+				new TypeInference(resolveContext.Compilation));
 		}
 
 		static IType GetReturnTypeFromInstruction(ILInstruction instruction)

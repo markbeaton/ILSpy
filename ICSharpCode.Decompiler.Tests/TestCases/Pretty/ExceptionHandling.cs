@@ -17,7 +17,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 using System;
-#if !LEGACY_CSC
+#if CS60
 using System.IO;
 #endif
 using System.Threading;
@@ -34,8 +34,8 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 		public bool ConditionalReturnInThrow()
 		{
 			try {
-				if (this.B(0)) {
-					return this.B(1);
+				if (B(0)) {
+					return B(1);
 				}
 			} catch {
 			}
@@ -46,7 +46,7 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 		{
 			try {
 				Console.WriteLine("Try");
-				return this.B(new Random().Next());
+				return B(new Random().Next());
 			} catch (Exception) {
 				Console.WriteLine("CatchException");
 			}
@@ -57,19 +57,19 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 		{
 			try {
 				Console.WriteLine("Try");
-				return this.B(new Random().Next());
+				return B(new Random().Next());
 			} catch (Exception ex) {
 				Console.WriteLine("CatchException ex: " + ex.ToString());
 			}
 			return false;
 		}
 
-#if !LEGACY_CSC
+#if CS60
 		public bool SimpleTryCatchExceptionWithNameAndCondition()
 		{
 			try {
 				Console.WriteLine("Try");
-				return this.B(new Random().Next());
+				return B(new Random().Next());
 			} catch (Exception ex) when (ex.Message.Contains("test")) {
 				Console.WriteLine("CatchException ex: " + ex.ToString());
 			}
@@ -80,7 +80,7 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 		{
 			try {
 				Console.WriteLine("Try");
-				return this.B(new Random().Next());
+				return B(new Random().Next());
 			} catch (Exception ex) when (ex is ArgumentException || ex is IOException) {
 				Console.WriteLine("CatchException ex: " + ex.ToString());
 			}
@@ -91,7 +91,7 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 		{
 			try {
 				Console.WriteLine("Try");
-				return await this.T();
+				return await T();
 			} catch (Exception ex) when (ex is ArgumentException || ex is IOException) {
 				Console.WriteLine("CatchException ex: " + ex.ToString());
 			}
@@ -188,6 +188,168 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 			}
 		}
 
+		public void ThrowInFinally()
+		{
+			try {
+			} finally {
+				throw new Exception();
+			}
+		}
 
+#if ROSLYN || !OPT
+		// TODO Non-Roslyn compilers create a second while loop inside the try, by inverting the if
+		// This is fixed in the non-optimised version by the enabling the RemoveDeadCode flag
+		//public bool EarlyExitInLoopTry()
+		//{
+		//	while (true) {
+		//		try {
+		//			while (B(0)) {
+		//				Console.WriteLine();
+		//			}
+		//
+		//			return false;
+		//		} catch {
+		//		}
+		//	}
+		//}
+		public bool EarlyExitInLoopTry()
+		{
+			while (true) {
+				try {
+					if (!B(0)) {
+						return false;
+					}
+
+					Console.WriteLine();
+				} catch {
+				}
+			}
+		}
+#endif
+
+		public bool ComplexConditionalReturnInThrow()
+		{
+			try {
+				if (B(0)) {
+					if (B(1)) {
+						Console.WriteLine("0 && 1");
+						return B(2);
+					}
+
+					if (B(3)) {
+						Console.WriteLine("0 && 3");
+						return !B(2);
+					}
+
+					Console.WriteLine("0");
+				}
+
+				Console.WriteLine("End Try");
+
+			} catch {
+				try {
+					try {
+						if (((B(0) || B(1)) && B(2)) || B(3)) {
+							return B(4) && !B(5);
+						}
+						if (B(6) || B(7)) {
+							return B(8) || B(9);
+						}
+					} catch {
+						Console.WriteLine("Catch2");
+					}
+					return B(10) && B(11);
+				} catch {
+					Console.WriteLine("Catch");
+				} finally {
+					Console.WriteLine("Finally");
+				}
+			}
+			return false;
+		}
+
+		public void AppropriateLockExit()
+		{
+			int num = 0;
+			lock (this) {
+				if (num <= 256) {
+					Console.WriteLine(0);
+				} else if (num <= 1024) {
+					Console.WriteLine(1);
+				} else if (num <= 16384) {
+					Console.WriteLine(2);
+				}
+			}
+		}
+
+		public void ReassignExceptionVar()
+		{
+			try {
+				Console.WriteLine("ReassignExceptionVar");
+			} catch (Exception innerException) {
+				if (innerException.InnerException != null) {
+					innerException = innerException.InnerException;
+				}
+				Console.WriteLine(innerException);
+			}
+		}
+
+		public int UseExceptionVarOutsideCatch()
+		{
+			Exception ex2;
+			try {
+				return 1;
+			} catch (Exception ex) {
+				ex2 = ex;
+			}
+			Console.WriteLine(ex2 != null);
+			return 2;
+		}
+
+		public void GenericException<TException>(int input) where TException : Exception
+		{
+			try {
+				Console.WriteLine(input);
+			} catch (TException val) {
+				Console.WriteLine(val.Message);
+				throw;
+			}
+		}
+
+		public void GenericException2<T>() where T : Exception
+		{
+			try {
+				Console.WriteLine("CatchT");
+#if ROSLYN
+			} catch (T val) {
+				Console.WriteLine("{0} {1}", val, val.ToString());
+			}
+#else
+			} catch (T arg) {
+				Console.WriteLine("{0} {1}", arg, arg.ToString());
+			}
+#endif
+		}
+
+#if CS60
+		public void GenericExceptionWithCondition<TException>(int input) where TException : Exception
+		{
+			try {
+				Console.WriteLine(input);
+			} catch (TException val) when (val.Message.Contains("Test")) {
+				Console.WriteLine(val.Message);
+				throw;
+			}
+		}
+
+		public void GenericException2WithCondition<TException>(int input) where TException : Exception
+		{
+			try {
+				Console.WriteLine(input);
+			} catch (TException val) when (val.Message.Contains("Test")) {
+				Console.WriteLine("{0} {1}", val, val.ToString());
+			}
+		}
+#endif
 	}
 }

@@ -27,7 +27,7 @@ namespace ICSharpCode.Decompiler.IL
 		/// <summary>
 		/// The instruction may read from local variables.
 		/// </summary>
-		MayReadLocals  = 0x10,
+		MayReadLocals = 0x10,
 		/// <summary>
 		/// The instruction may write to local variables.
 		/// </summary>
@@ -51,9 +51,13 @@ namespace ICSharpCode.Decompiler.IL
 		/// </summary>
 		MayThrow = 0x100,
 		/// <summary>
-		/// The instruction may exit with a branch or return.
+		/// The instruction may exit with a branch or leave.
 		/// </summary>
 		MayBranch = 0x200,
+		/// <summary>
+		/// The instruction may jump to the closest containing <c>nullable.rewrap</c> instruction.
+		/// </summary>
+		MayUnwrapNull = 0x400,
 		/// <summary>
 		/// The instruction performs unconditional control flow, so that its endpoint is unreachable.
 		/// </summary>
@@ -61,17 +65,17 @@ namespace ICSharpCode.Decompiler.IL
 		/// If EndPointUnreachable is set, either MayThrow or MayBranch should also be set
 		/// (unless the instruction represents an infinite loop).
 		/// </remarks>
-		EndPointUnreachable = 0x400,
+		EndPointUnreachable = 0x800,
 		/// <summary>
 		/// The instruction contains some kind of internal control flow.
 		/// </summary>
 		/// <remarks>
-		/// If this flag is not set, the all descendants of the instruction are fully evaluated (modulo MayThrow/MayBranch)
+		/// If this flag is not set, all descendants of the instruction are fully evaluated (modulo MayThrow/MayBranch/MayUnwrapNull)
 		/// in left-to-right pre-order.
 		/// 
 		/// Note that branch instructions don't have this flag set, because their control flow is not internal
 		/// (and they don't have any unusual argument evaluation rules).
 		/// </remarks>
-		ControlFlow = 0x800,
+		ControlFlow = 0x1000,
 	}
 }

@@ -17,11 +17,16 @@
 // DEALINGS IN THE SOFTWARE.
 
 using System;
+using System.Reflection;
 
 namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 {
 	public class TypeAnalysisTests
 	{
+		private class @_
+		{
+		}
+
 		private byte[] byteArray;
 
 		public byte SubtractFrom256(byte b)
@@ -122,6 +127,8 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 		{
 			Console.WriteLine(o is Random);
 			Console.WriteLine(!(o is Random));
+			// If we didn't escape the '_' identifier here, this would look like a discard pattern
+			Console.WriteLine(o is @_);
 		}
 
 		public byte[] CreateArrayWithInt(int length)
@@ -156,38 +163,38 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 
 		public byte UseArrayWithInt(int i)
 		{
-			return this.byteArray[i];
+			return byteArray[i];
 		}
 
 		public byte UseArrayWithUInt(uint i)
 		{
-			return this.byteArray[i];
+			return byteArray[i];
 		}
 
 		public byte UseArrayWithLong(long i)
 		{
-			return this.byteArray[i];
+			return byteArray[i];
 		}
 
 		public byte UseArrayWithULong(ulong i)
 		{
-			return this.byteArray[i];
+			return byteArray[i];
 		}
 
 		public byte UseArrayWithShort(short i)
 		{
-			return this.byteArray[i];
+			return byteArray[i];
 		}
 
 		public byte UseArrayWithUShort(ushort i)
 		{
-			return this.byteArray[i];
+			return byteArray[i];
 		}
 
 		public byte UseArrayWithCastToUShort(int i)
 		{
 			// Unchecked cast = truncate to 16 bits
-			return this.byteArray[(ushort)i];
+			return byteArray[(ushort)i];
 		}
 
 		public StringComparison EnumDiffNumber(StringComparison data)
@@ -230,6 +237,26 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 			return a == null;
 		}
 
+		public bool CompareType(Type a, Type b)
+		{
+			return a == b;
+		}
+
+		public bool CompareTypeByReference(Type a, Type b)
+		{
+			return (object)a == b;
+		}
+
+		public bool CompareTypeWithNull(Type t)
+		{
+			return t == null;
+		}
+
+		public Attribute CallExtensionMethodViaBaseClass(Type type)
+		{
+			return type.GetCustomAttribute<AttributeUsageAttribute>();
+		}
+
 		public decimal ImplicitConversionToDecimal(byte v)
 		{
 			return v;
@@ -238,6 +265,26 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 		public decimal ImplicitConversionToDecimal(ulong v)
 		{
 			return v;
+		}
+
+		public bool EnumInConditionalOperator(bool b)
+		{
+			return string.Equals("", "", b ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
+		}
+
+		public bool MethodCallOnEnumConstant()
+		{
+			return AttributeTargets.All.HasFlag(AttributeTargets.Assembly);
+		}
+
+		public static string ImpossibleCast1(int i)
+		{
+			return (string)(object)i;
+		}
+
+		public static string ImpossibleCast2(Action a)
+		{
+			return (string)(object)a;
 		}
 	}
 }

@@ -20,8 +20,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-
-using Mono.Cecil;
+using System.Windows;
+using ICSharpCode.Decompiler.Metadata;
 
 namespace ICSharpCode.ILSpy
 {
@@ -39,8 +39,13 @@ namespace ICSharpCode.ILSpy
 			IAssemblyEnum assemblyEnum = null;
 			IAssemblyName assemblyName = null;
 			
-			Fusion.CreateAssemblyEnum(out assemblyEnum, null, null, 2, 0);
+			uint result = unchecked((uint)Fusion.CreateAssemblyEnum(out assemblyEnum, null, null, 2, 0));
+			if (result == 0x80070005) {
+				MessageBox.Show($"Cannot access GAC, please restart with elevated privileges! (HRESULT 0x{result:X})", "ILSpy", MessageBoxButton.OK, MessageBoxImage.Error);
+				yield break;
+			}
 			while (assemblyEnum.GetNextAssembly(out applicationContext, out assemblyName, 0) == 0) {
+				if (assemblyName == null) continue;
 				uint nChars = 0;
 				assemblyName.GetDisplayName(null, ref nChars, 0);
 				

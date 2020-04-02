@@ -28,7 +28,19 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 			public int X;
 			public double Y;
 		}
-		
+
+		public struct ResultStruct
+		{
+			public unsafe byte* ptr1;
+			public unsafe byte* ptr2;
+
+			public unsafe ResultStruct(byte* ptr1, byte* ptr2)
+			{
+				this.ptr1 = ptr1;
+				this.ptr2 = ptr2;
+			}
+		}
+
 		public struct StructWithFixedSizeMembers
 		{
 			public unsafe fixed int Integers[100];
@@ -53,25 +65,39 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 			}
 		}
 
+#if CS73
+		public class CustomPinnable
+		{
+			public ref int GetPinnableReference()
+			{
+				throw new NotImplementedException();
+			}
+		}
+#endif
+
 		public unsafe delegate void UnsafeDelegate(byte* ptr);
 
 		private UnsafeDelegate unsafeDelegate;
 		private static UnsafeDelegate staticUnsafeDelegate;
 
+#if CS60
+		public unsafe int* NullPointer => null;
+#else
 		public unsafe int* NullPointer {
 			get {
 				return null;
 			}
 		}
+#endif
 
 		unsafe static UnsafeCode()
 		{
-			UnsafeCode.staticUnsafeDelegate = UnsafeCode.UnsafeStaticMethod;
+			staticUnsafeDelegate = UnsafeStaticMethod;
 		}
 
 		public unsafe UnsafeCode()
 		{
-			this.unsafeDelegate = this.UnsafeMethod;
+			unsafeDelegate = UnsafeMethod;
 		}
 
 		public unsafe int SizeOf()
@@ -95,18 +121,18 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 
 		public unsafe void PointerComparison(int* a, double* b)
 		{
-			UnsafeCode.UseBool(a == b);
-			UnsafeCode.UseBool(a != b);
-			UnsafeCode.UseBool(a < b);
-			UnsafeCode.UseBool(a > b);
-			UnsafeCode.UseBool(a <= b);
-			UnsafeCode.UseBool(a >= b);
+			UseBool(a == b);
+			UseBool(a != b);
+			UseBool(a < b);
+			UseBool(a > b);
+			UseBool(a <= b);
+			UseBool(a >= b);
 		}
 
 		public unsafe void PointerComparisonWithNull(int* a)
 		{
-			UnsafeCode.UseBool(a == null);
-			UnsafeCode.UseBool(a != null);
+			UseBool(a == null);
+			UseBool(a != null);
 		}
 
 		public unsafe int* PointerCast(long* p)
@@ -145,25 +171,25 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 		public unsafe void PassRefParameterAsPointer(ref int p)
 		{
 			fixed (int* ptr = &p) {
-				this.UsePointer(ptr);
+				UsePointer(ptr);
 			}
 		}
 
 		public unsafe void PassPointerAsRefParameter(int* p)
 		{
-			this.UseReference(ref *p);
+			UseReference(ref *p);
 		}
 
 		public unsafe void PassPointerCastAsRefParameter(uint* p)
 		{
-			this.UseReference(ref *(int*)p);
+			UseReference(ref *(int*)p);
 		}
 
 		public unsafe void AddressInMultiDimensionalArray(double[,] matrix)
 		{
 			fixed (double* d = &matrix[1, 2]) {
-				this.PointerReferenceExpression(d);
-				this.PointerReferenceExpression(d);
+				PointerReferenceExpression(d);
+				PointerReferenceExpression(d);
 			}
 		}
 		
@@ -173,6 +199,12 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 				for (char* ptr2 = ptr; *ptr2 == 'a'; ptr2++) {
 					*ptr2 = 'A';
 				}
+			}
+		}
+
+		public unsafe void FixedStringNoPointerUse(string text)
+		{
+			fixed (char* ptr = text) {
 			}
 		}
 
@@ -302,19 +334,19 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 
 		public unsafe void UseFixedMemberAsPointer(StructWithFixedSizeMembers* m)
 		{
-			this.UsePointer(m->Integers);
+			UsePointer(m->Integers);
 		}
 
 		public unsafe void UseFixedMemberAsReference(StructWithFixedSizeMembers* m)
 		{
-			this.UseReference(ref *m->Integers);
-			this.UseReference(ref m->Integers[1]);
+			UseReference(ref *m->Integers);
+			UseReference(ref m->Integers[1]);
 		}
 
 		public unsafe void PinFixedMember(ref StructWithFixedSizeMembers m)
 		{
 			fixed (int* ptr = m.Integers) {
-				this.UsePointer(ptr);
+				UsePointer(ptr);
 			}
 		}
 
@@ -332,6 +364,29 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 			return ptr->ToString();
 		}
 
+		public unsafe void FixedMultiDimArray(int[,] arr)
+		{
+			fixed (int* ptr = arr) {
+				UsePointer(ptr);
+			}
+		}
+
+#if CS73
+		public unsafe void FixedSpan(Span<int> span)
+		{
+			fixed (int* ptr = span) {
+				UsePointer(ptr);
+			}
+		}
+
+		//public unsafe void FixedCustomReferenceType(CustomPinnable mem)
+		//{
+		//	fixed (int* ptr = mem) {
+		//		UsePointer(ptr);
+		//	}
+		//}
+#endif
+
 		public unsafe string StackAlloc(int count)
 		{
 			char* ptr = stackalloc char[count];
@@ -340,31 +395,88 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 				ptr[i] = (char)i;
 				ptr2[i] = '\0';
 			}
-			return this.UsePointer((double*)ptr);
+			return UsePointer((double*)ptr);
 		}
 
 		public unsafe string StackAllocStruct(int count)
 		{
 			SimpleStruct* ptr = stackalloc SimpleStruct[checked(count * 2)];
+#if !(ROSLYN && OPT)
+			// unused stackalloc gets optimized out by roslyn
 			SimpleStruct* ptr2 = stackalloc SimpleStruct[10];
+#endif
 			ptr->X = count;
 			ptr[1].X = ptr->X;
 			for (int i = 2; i < 10; i++) {
 				ptr[i].X = count;
 			}
-			return this.UsePointer(&ptr->Y);
+			return UsePointer(&ptr->Y);
 		}
 
 		unsafe ~UnsafeCode()
 		{
-			this.PassPointerAsRefParameter(this.NullPointer);
+			PassPointerAsRefParameter(NullPointer);
 		}
 
 		private unsafe void Issue990()
 		{
 			Data data = default(Data);
 			Data* ptr = &data;
-			this.ConvertIntToFloat(ptr->Position.GetHashCode());
+			ConvertIntToFloat(ptr->Position.GetHashCode());
+		}
+
+		private unsafe static void Issue1021(ref byte* bytePtr, ref short* shortPtr)
+		{
+			bytePtr += 4;
+			shortPtr += 2;
+			bytePtr -= 4;
+			shortPtr = (short*)((byte*)shortPtr - 3);
+		}
+
+		private static T Get<T>()
+		{
+			return default(T);
+		}
+
+		private unsafe static ResultStruct NestedFixedBlocks(byte[] array)
+		{
+			try {
+				fixed (byte* ptr = array) {
+					fixed (byte* ptr2 = Get<byte[]>()) {
+						return new ResultStruct(ptr, ptr2);
+					}
+				}
+			} finally {
+				Console.WriteLine("Finally");
+			}
+		}
+
+		private unsafe static object CreateBuffer(int length, byte* ptr)
+		{
+			throw new NotImplementedException();
+		}
+
+		private unsafe static object Issue1386(int arraySize, bool createFirstBuffer)
+		{
+			if (createFirstBuffer) {
+				byte[] array = new byte[arraySize];
+				Console.WriteLine("first fixed");
+				fixed (byte* ptr = array) {
+					return CreateBuffer(array.Length, ptr);
+				}
+			}
+
+			byte[] array2 = new byte[arraySize];
+			Console.WriteLine("second fixed");
+			fixed (byte* ptr2 = array2) {
+				return CreateBuffer(array2.Length, ptr2);
+			}
+		}
+
+		private unsafe static void Issue1499(StructWithFixedSizeMembers value, int index)
+		{
+			int num = value.Integers[index];
+			num.ToString();
 		}
 	}
 }

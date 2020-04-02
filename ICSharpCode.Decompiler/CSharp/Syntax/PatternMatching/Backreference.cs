@@ -35,13 +35,13 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax.PatternMatching
 		public Backreference(string referencedGroupName)
 		{
 			if (referencedGroupName == null)
-				throw new ArgumentNullException("referencedGroupName");
+				throw new ArgumentNullException(nameof(referencedGroupName));
 			this.referencedGroupName = referencedGroupName;
 		}
 		
 		public override bool DoMatch(INode other, Match match)
 		{
-			var last = match.Get (referencedGroupName).Last ();
+			var last = match.Get (referencedGroupName).LastOrDefault();
 			if (last == null && other == null)
 				return true;
 			return last.IsMatch(other);

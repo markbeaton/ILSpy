@@ -16,44 +16,12 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+using System;
 using System.Collections.Generic;
+using ICSharpCode.Decompiler.Util;
 
 namespace ICSharpCode.Decompiler.TypeSystem
 {
-	/// <summary>
-	/// Type parameter of a generic class/method.
-	/// </summary>
-	public interface IUnresolvedTypeParameter : INamedElement
-	{
-		/// <summary>
-		/// Get the type of this type parameter's owner.
-		/// </summary>
-		/// <returns>SymbolKind.TypeDefinition or SymbolKind.Method</returns>
-		SymbolKind OwnerType { get; }
-		
-		/// <summary>
-		/// Gets the index of the type parameter in the type parameter list of the owning method/class.
-		/// </summary>
-		int Index { get; }
-		
-		/// <summary>
-		/// Gets the list of attributes declared on this type parameter.
-		/// </summary>
-		IList<IUnresolvedAttribute> Attributes { get; }
-		
-		/// <summary>
-		/// Gets the variance of this type parameter.
-		/// </summary>
-		VarianceModifier Variance { get; }
-		
-		/// <summary>
-		/// Gets the region where the type parameter is defined.
-		/// </summary>
-		DomRegion Region { get; }
-		
-		ITypeParameter CreateResolvedTypeParameter(ITypeResolveContext context);
-	}
-	
 	/// <summary>
 	/// Type parameter of a generic class/method.
 	/// </summary>
@@ -64,10 +32,10 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		/// </summary>
 		/// <returns>SymbolKind.TypeDefinition or SymbolKind.Method</returns>
 		SymbolKind OwnerType { get; }
-		
+
 		/// <summary>
 		/// Gets the owning method/class.
-		/// This property may return null (for example for the dummy type parameters used by <see cref="ParameterListComparer.NormalizeMethodTypeParameters"/>).
+		/// This property may return null (for example for the dummy type parameters used by <see cref="NormalizeTypeVisitor.ReplaceMethodTypeParametersWithDummy"/>).
 		/// </summary>
 		/// <remarks>
 		/// For "class Outer&lt;T&gt; { class Inner {} }",
@@ -85,21 +53,16 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		/// Gets the name of the type parameter.
 		/// </summary>
 		new string Name { get; }
-		
+
 		/// <summary>
-		/// Gets the list of attributes declared on this type parameter.
+		/// Gets the attributes declared on this type parameter.
 		/// </summary>
-		IList<IAttribute> Attributes { get; }
+		IEnumerable<IAttribute> GetAttributes();
 		
 		/// <summary>
 		/// Gets the variance of this type parameter.
 		/// </summary>
 		VarianceModifier Variance { get; }
-		
-		/// <summary>
-		/// Gets the region where the type parameter is defined.
-		/// </summary>
-		DomRegion Region { get; }
 		
 		/// <summary>
 		/// Gets the effective base class of this type parameter.
@@ -109,7 +72,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		/// <summary>
 		/// Gets the effective interface set of this type parameter.
 		/// </summary>
-		ICollection<IType> EffectiveInterfaceSet { get; }
+		IReadOnlyCollection<IType> EffectiveInterfaceSet { get; }
 		
 		/// <summary>
 		/// Gets if the type parameter has the 'new()' constraint.
@@ -122,9 +85,37 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		bool HasReferenceTypeConstraint { get; }
 		
 		/// <summary>
-		/// Gets if the type parameter has the 'struct' constraint.
+		/// Gets if the type parameter has the 'struct' or 'unmanaged' constraint.
 		/// </summary>
 		bool HasValueTypeConstraint { get; }
+
+		/// <summary>
+		/// Gets if the type parameter has the 'unmanaged' constraint.
+		/// </summary>
+		bool HasUnmanagedConstraint { get; }
+
+		/// <summary>
+		/// Nullability of the reference type constraint. (e.g. "where T : class?").
+		/// 
+		/// Note that the nullability of a use of the type parameter may differ from this.
+		/// E.g. "T? GetNull&lt;T&gt;() where T : class => null;"
+		/// </summary>
+		Nullability NullabilityConstraint { get; }
+
+		IReadOnlyList<TypeConstraint> TypeConstraints { get; }
+	}
+
+	public readonly struct TypeConstraint
+	{
+		public SymbolKind SymbolKind => SymbolKind.Constraint;
+		public IType Type { get; }
+		public IReadOnlyList<IAttribute> Attributes { get; }
+
+		public TypeConstraint(IType type, IReadOnlyList<IAttribute> attributes = null)
+		{
+			this.Type = type ?? throw new ArgumentNullException(nameof(type));
+			this.Attributes = attributes ?? EmptyList<IAttribute>.Instance;
+		}
 	}
 	
 	/// <summary>

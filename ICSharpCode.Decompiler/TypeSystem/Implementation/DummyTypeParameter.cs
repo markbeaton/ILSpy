@@ -16,6 +16,7 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using ICSharpCode.Decompiler.Util;
@@ -26,6 +27,7 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 	{
 		static ITypeParameter[] methodTypeParameters = { new DummyTypeParameter(SymbolKind.Method, 0) };
 		static ITypeParameter[] classTypeParameters = { new DummyTypeParameter(SymbolKind.TypeDefinition, 0) };
+		static IReadOnlyList<ITypeParameter>[] classTypeParameterLists = { EmptyList<ITypeParameter>.Instance };
 		
 		public static ITypeParameter GetMethodTypeParameter(int index)
 		{
@@ -60,61 +62,36 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			}
 			return tps[index];
 		}
-		
-		sealed class NormalizeMethodTypeParametersVisitor : TypeVisitor
+
+		/// <summary>
+		/// Gets a list filled with dummy type parameters.
+		/// </summary>
+		internal static IReadOnlyList<ITypeParameter> GetClassTypeParameterList(int length)
 		{
-			public override IType VisitTypeParameter(ITypeParameter type)
-			{
-				if (type.OwnerType == SymbolKind.Method) {
-					return DummyTypeParameter.GetMethodTypeParameter(type.Index);
+			IReadOnlyList<ITypeParameter>[] tps = classTypeParameterLists;
+			while (length >= tps.Length) {
+				// We don't have a normal type parameter for this index, so we need to extend our array.
+				// Because the array can be used concurrently from multiple threads, we have to use
+				// Interlocked.CompareExchange.
+				IReadOnlyList<ITypeParameter>[] newTps = new IReadOnlyList<ITypeParameter>[length + 1];
+				tps.CopyTo(newTps, 0);
+				for (int i = tps.Length; i < newTps.Length; i++) {
+					var newList = new ITypeParameter[i];
+					for (int j = 0; j < newList.Length; j++) {
+						newList[j] = GetClassTypeParameter(j);
+					}
+					newTps[i] = newList;
+				}
+				var oldTps = Interlocked.CompareExchange(ref classTypeParameterLists, newTps, tps);
+				if (oldTps == tps) {
+					// exchange successful
+					tps = newTps;
 				} else {
-					return base.VisitTypeParameter(type);
+					// exchange not successful
+					tps = oldTps;
 				}
 			}
-		}
-		sealed class NormalizeClassTypeParametersVisitor : TypeVisitor
-		{
-			public override IType VisitTypeParameter(ITypeParameter type)
-			{
-				if (type.OwnerType == SymbolKind.TypeDefinition) {
-					return DummyTypeParameter.GetClassTypeParameter(type.Index);
-				} else {
-					return base.VisitTypeParameter(type);
-				}
-			}
-		}
-		
-		static readonly NormalizeMethodTypeParametersVisitor normalizeMethodTypeParameters = new NormalizeMethodTypeParametersVisitor();
-		static readonly NormalizeClassTypeParametersVisitor normalizeClassTypeParameters = new NormalizeClassTypeParametersVisitor();
-		
-		/// <summary>
-		/// Replaces all occurrences of method type parameters in the given type
-		/// by normalized type parameters. This allows comparing parameter types from different
-		/// generic methods.
-		/// </summary>
-		public static IType NormalizeMethodTypeParameters(IType type)
-		{
-			return type.AcceptVisitor(normalizeMethodTypeParameters);
-		}
-		
-		/// <summary>
-		/// Replaces all occurrences of class type parameters in the given type
-		/// by normalized type parameters. This allows comparing parameter types from different
-		/// generic methods.
-		/// </summary>
-		public static IType NormalizeClassTypeParameters(IType type)
-		{
-			return type.AcceptVisitor(normalizeClassTypeParameters);
-		}
-		
-		/// <summary>
-		/// Replaces all occurrences of class and method type parameters in the given type
-		/// by normalized type parameters. This allows comparing parameter types from different
-		/// generic methods.
-		/// </summary>
-		public static IType NormalizeAllTypeParameters(IType type)
-		{
-			return type.AcceptVisitor(normalizeClassTypeParameters).AcceptVisitor(normalizeMethodTypeParameters);
+			return tps[length];
 		}
 		
 		readonly SymbolKind ownerType;
@@ -155,11 +132,6 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			get { return TypeKind.TypeParameter; }
 		}
 		
-		public override ITypeReference ToTypeReference()
-		{
-			return TypeParameterReference.Create(ownerType, index);
-		}
-		
 		public override IType AcceptVisitor(TypeVisitor visitor)
 		{
 			return visitor.VisitTypeParameter(this);
@@ -169,9 +141,7 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			get { return index; }
 		}
 		
-		IList<IAttribute> ITypeParameter.Attributes {
-			get { return EmptyList<IAttribute>.Instance; }
-		}
+		IEnumerable<IAttribute> ITypeParameter.GetAttributes() =>EmptyList<IAttribute>.Instance;
 		
 		SymbolKind ITypeParameter.OwnerType {
 			get { return ownerType; }
@@ -179,10 +149,6 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 		
 		VarianceModifier ITypeParameter.Variance {
 			get { return VarianceModifier.Invariant; }
-		}
-		
-		DomRegion ITypeParameter.Region {
-			get { return DomRegion.Empty; }
 		}
 		
 		IEntity ITypeParameter.Owner {
@@ -193,25 +159,25 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			get { return SpecialType.UnknownType; }
 		}
 		
-		ICollection<IType> ITypeParameter.EffectiveInterfaceSet {
+		IReadOnlyCollection<IType> ITypeParameter.EffectiveInterfaceSet {
 			get { return EmptyList<IType>.Instance; }
 		}
-		
-		bool ITypeParameter.HasDefaultConstructorConstraint {
-			get { return false; }
-		}
-		
-		bool ITypeParameter.HasReferenceTypeConstraint {
-			get { return false; }
-		}
-		
-		bool ITypeParameter.HasValueTypeConstraint {
-			get { return false; }
-		}
 
-		public ISymbolReference ToReference()
+		bool ITypeParameter.HasDefaultConstructorConstraint => false;
+		bool ITypeParameter.HasReferenceTypeConstraint => false;
+		bool ITypeParameter.HasValueTypeConstraint => false;
+		bool ITypeParameter.HasUnmanagedConstraint => false;
+		Nullability ITypeParameter.NullabilityConstraint => Nullability.Oblivious;
+
+		IReadOnlyList<TypeConstraint> ITypeParameter.TypeConstraints => EmptyList<TypeConstraint>.Instance;
+
+		public override IType ChangeNullability(Nullability nullability)
 		{
-			return new TypeParameterReference(ownerType, index);
+			if (nullability == Nullability.Oblivious) {
+				return this;
+			} else {
+				return new NullabilityAnnotatedTypeParameter(this, nullability);
+			}
 		}
 	}
 }

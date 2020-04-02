@@ -327,11 +327,16 @@ namespace ICSharpCode.Decompiler.IL
 		/// </summary>
 		public bool MatchCompEquals(out ILInstruction left, out ILInstruction right)
 		{
-			if (this.MatchLogicNot(out var arg) && arg is Comp nestedComp && nestedComp.Kind == ComparisonKind.Inequality && !nestedComp.IsLifted) {
-				left = nestedComp.Left;
-				right = nestedComp.Right;
-				return true;
-			} else if (this is Comp comp && comp.Kind == ComparisonKind.Equality && !comp.IsLifted) {
+			ILInstruction thisInst = this;
+			var compKind = ComparisonKind.Equality;
+			while (thisInst.MatchLogicNot(out var arg) && arg is Comp) {
+				thisInst = arg;
+				if (compKind == ComparisonKind.Equality)
+					compKind = ComparisonKind.Inequality;
+				else
+					compKind = ComparisonKind.Equality;
+			}
+			if (thisInst is Comp comp && comp.Kind == compKind && !comp.IsLifted) {
 				left = comp.Left;
 				right = comp.Right;
 				return true;
@@ -364,15 +369,41 @@ namespace ICSharpCode.Decompiler.IL
 		}
 
 		/// <summary>
+		/// Matches 'comp(arg != ldnull)'
+		/// </summary>
+		public bool MatchCompNotEqualsNull(out ILInstruction arg)
+		{
+			if (!MatchCompNotEquals(out var left, out var right)) {
+				arg = null;
+				return false;
+			}
+			if (right.MatchLdNull()) {
+				arg = left;
+				return true;
+			} else if (left.MatchLdNull()) {
+				arg = right;
+				return true;
+			} else {
+				arg = null;
+				return false;
+			}
+		}
+
+		/// <summary>
 		/// Matches comp(left != right) or logic.not(comp(left == right)).
 		/// </summary>
 		public bool MatchCompNotEquals(out ILInstruction left, out ILInstruction right)
 		{
-			if (this.MatchLogicNot(out var arg) && arg is Comp nestedComp && nestedComp.Kind == ComparisonKind.Equality && !nestedComp.IsLifted) {
-				left = nestedComp.Left;
-				right = nestedComp.Right;
-				return true;
-			} else if (this is Comp comp && comp.Kind == ComparisonKind.Inequality && !comp.IsLifted) {
+			ILInstruction thisInst = this;
+			var compKind = ComparisonKind.Inequality;
+			while (thisInst.MatchLogicNot(out var arg) && arg is Comp) {
+				thisInst = arg;
+				if (compKind == ComparisonKind.Equality)
+					compKind = ComparisonKind.Inequality;
+				else
+					compKind = ComparisonKind.Equality;
+			}
+			if (thisInst is Comp comp && comp.Kind == compKind && !comp.IsLifted) {
 				left = comp.Left;
 				right = comp.Right;
 				return true;
@@ -387,7 +418,7 @@ namespace ICSharpCode.Decompiler.IL
 		{
 			if (this is LdObj ldobj && ldobj.Target is LdFlda ldflda && ldobj.UnalignedPrefix == 0 && !ldobj.IsVolatile) {
 				field = ldflda.Field;
-				if (field.DeclaringType.IsReferenceType == true || !ldflda.Target.MatchAddressOf(out target)) {
+				if (field.DeclaringType.IsReferenceType == true || !ldflda.Target.MatchAddressOf(out target, out _)) {
 					target = ldflda.Target;
 				}
 				return true;

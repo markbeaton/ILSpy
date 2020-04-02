@@ -33,7 +33,7 @@ namespace ICSharpCode.Decompiler.Semantics
 		public ResolveResult(IType type)
 		{
 			if (type == null)
-				throw new ArgumentNullException("type");
+				throw new ArgumentNullException(nameof(type));
 			this.type = type;
 		}
 		
@@ -63,11 +63,6 @@ namespace ICSharpCode.Decompiler.Semantics
 		public virtual IEnumerable<ResolveResult> GetChildResults()
 		{
 			return Enumerable.Empty<ResolveResult>();
-		}
-		
-		public virtual DomRegion GetDefinitionRegion()
-		{
-			return DomRegion.Empty;
 		}
 		
 		public virtual ResolveResult ShallowClone()

@@ -94,14 +94,14 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 		internal class OperatorMethod : IParameterizedMember
 		{
 			readonly ICompilation compilation;
-			readonly IList<IParameter> parameters = new List<IParameter>();
+			internal readonly List<IParameter> parameters = new List<IParameter>();
 			
 			protected OperatorMethod(ICompilation compilation)
 			{
 				this.compilation = compilation;
 			}
 			
-			public IList<IParameter> Parameters {
+			public IReadOnlyList<IParameter> Parameters {
 				get { return parameters; }
 			}
 			
@@ -115,7 +115,9 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 			{
 				return null;
 			}
-			
+
+			public System.Reflection.Metadata.EntityHandle MetadataToken => default;
+
 			ITypeDefinition IEntity.DeclaringTypeDefinition {
 				get { return null; }
 			}
@@ -127,12 +129,8 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 			IMember IMember.MemberDefinition {
 				get { return this; }
 			}
-			
-			IUnresolvedMember IMember.UnresolvedMember {
-				get { return null; }
-			}
-			
-			IList<IMember> IMember.ImplementedInterfaceMembers {
+
+			IEnumerable<IMember> IMember.ExplicitlyImplementedInterfaceMembers {
 				get { return EmptyList<IMember>.Instance; }
 			}
 			
@@ -152,19 +150,12 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 				get { return SymbolKind.Operator; }
 			}
 			
-			DomRegion IEntity.Region {
-				get { return DomRegion.Empty; }
+			IEnumerable<IAttribute> IEntity.GetAttributes()
+			{
+				return EmptyList<IAttribute>.Instance;
 			}
 			
-			DomRegion IEntity.BodyRegion {
-				get { return DomRegion.Empty; }
-			}
-			
-			IList<IAttribute> IEntity.Attributes {
-				get { return EmptyList<IAttribute>.Instance; }
-			}
-			
-			Accessibility IHasAccessibility.Accessibility {
+			Accessibility IEntity.Accessibility {
 				get { return Accessibility.Public; }
 			}
 			
@@ -180,56 +171,14 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 				get { return false; }
 			}
 			
-			bool IEntity.IsShadowing {
-				get { return false; }
-			}
-			
-			bool IEntity.IsSynthetic {
-				get { return true; }
-			}
-			
-			bool IHasAccessibility.IsPrivate {
-				get { return false; }
-			}
-			
-			bool IHasAccessibility.IsPublic {
-				get { return true; }
-			}
-			
-			bool IHasAccessibility.IsProtected {
-				get { return false; }
-			}
-			
-			bool IHasAccessibility.IsInternal {
-				get { return false; }
-			}
-			
-			bool IHasAccessibility.IsProtectedOrInternal {
-				get { return false; }
-			}
-			
-			bool IHasAccessibility.IsProtectedAndInternal {
-				get { return false; }
-			}
-			
 			bool IMember.IsExplicitInterfaceImplementation {
 				get { return false; }
 			}
 			
-			IAssembly IEntity.ParentAssembly {
-				get { return compilation.MainAssembly; }
+			IModule IEntity.ParentModule {
+				get { return compilation.MainModule; }
 			}
 			
-			ISymbolReference ISymbol.ToReference()
-			{
-				throw new NotSupportedException();
-			}
-			
-			IMemberReference IMember.ToReference()
-			{
-				throw new NotSupportedException();
-			}
-
 			TypeParameterSubstitution IMember.Substitution {
 				get {
 					return TypeParameterSubstitution.Identity;
@@ -271,6 +220,11 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 				b.Append(')');
 				return b.ToString();
 			}
+
+			bool IMember.Equals(IMember obj, TypeVisitor typeNormalization)
+			{
+				return this == obj;
+			}
 		}
 		#endregion
 		
@@ -284,7 +238,7 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 				throw new NotSupportedException();
 			}
 			
-			public UnaryOperatorMethod(ICompilation compilaton) : base(compilaton)
+			public UnaryOperatorMethod(ICompilation compilation) : base(compilation)
 			{
 			}
 		}
@@ -298,7 +252,7 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 			{
 				TypeCode typeCode = Type.GetTypeCode(typeof(T));
 				this.ReturnType = operators.compilation.FindType(typeCode);
-				this.Parameters.Add(operators.MakeParameter(typeCode));
+				parameters.Add(operators.MakeParameter(typeCode));
 				this.func = func;
 			}
 			
@@ -327,10 +281,10 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 			{
 				this.baseMethod = baseMethod;
 				this.ReturnType = NullableType.Create(baseMethod.Compilation, baseMethod.ReturnType);
-				this.Parameters.Add(operators.MakeNullableParameter(baseMethod.Parameters[0]));
+				parameters.Add(operators.MakeNullableParameter(baseMethod.Parameters[0]));
 			}
 
-			public IList<IParameter> NonLiftedParameters => baseMethod.Parameters;
+			public IReadOnlyList<IParameter> NonLiftedParameters => baseMethod.Parameters;
 			public IType NonLiftedReturnType => baseMethod.ReturnType;
 		}
 		#endregion
@@ -459,8 +413,8 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 			{
 				TypeCode t1 = Type.GetTypeCode(typeof(T1));
 				this.ReturnType = operators.compilation.FindType(t1);
-				this.Parameters.Add(operators.MakeParameter(t1));
-				this.Parameters.Add(operators.MakeParameter(Type.GetTypeCode(typeof(T2))));
+				parameters.Add(operators.MakeParameter(t1));
+				parameters.Add(operators.MakeParameter(Type.GetTypeCode(typeof(T2))));
 				this.checkedFunc = checkedFunc;
 				this.uncheckedFunc = uncheckedFunc;
 			}
@@ -493,11 +447,11 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 			{
 				this.baseMethod = baseMethod;
 				this.ReturnType = NullableType.Create(operators.compilation, baseMethod.ReturnType);
-				this.Parameters.Add(operators.MakeNullableParameter(baseMethod.Parameters[0]));
-				this.Parameters.Add(operators.MakeNullableParameter(baseMethod.Parameters[1]));
+				parameters.Add(operators.MakeNullableParameter(baseMethod.Parameters[0]));
+				parameters.Add(operators.MakeNullableParameter(baseMethod.Parameters[1]));
 			}
 
-			public IList<IParameter> NonLiftedParameters => baseMethod.Parameters;
+			public IReadOnlyList<IParameter> NonLiftedParameters => baseMethod.Parameters;
 			public IType NonLiftedReturnType => baseMethod.ReturnType;
 		}
 		#endregion
@@ -605,8 +559,8 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 			{
 				this.canEvaluateAtCompileTime = p1 == TypeCode.String && p2 == TypeCode.String;
 				this.ReturnType = operators.compilation.FindType(KnownTypeCode.String);
-				this.Parameters.Add(operators.MakeParameter(p1));
-				this.Parameters.Add(operators.MakeParameter(p2));
+				parameters.Add(operators.MakeParameter(p1));
+				parameters.Add(operators.MakeParameter(p2));
 			}
 			
 			public override bool CanEvaluateAtCompileTime {
@@ -691,8 +645,8 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 				this.Negate = negate;
 				this.Type = type;
 				this.ReturnType = operators.compilation.FindType(KnownTypeCode.Boolean);
-				this.Parameters.Add(operators.MakeParameter(type));
-				this.Parameters.Add(operators.MakeParameter(type));
+				parameters.Add(operators.MakeParameter(type));
+				parameters.Add(operators.MakeParameter(type));
 			}
 			
 			public override bool CanEvaluateAtCompileTime {
@@ -737,8 +691,8 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 				this.baseMethod = baseMethod;
 				this.ReturnType = baseMethod.ReturnType;
 				IParameter p = operators.MakeNullableParameter(baseMethod.Parameters[0]);
-				this.Parameters.Add(p);
-				this.Parameters.Add(p);
+				parameters.Add(p);
+				parameters.Add(p);
 			}
 			
 			public override bool CanEvaluateAtCompileTime {
@@ -750,7 +704,7 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 				return baseMethod.Invoke(resolver, lhs, rhs);
 			}
 
-			public IList<IParameter> NonLiftedParameters => baseMethod.Parameters;
+			public IReadOnlyList<IParameter> NonLiftedParameters => baseMethod.Parameters;
 			public IType NonLiftedReturnType => baseMethod.ReturnType;
 		}
 		
@@ -835,8 +789,8 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 				: base(operators.compilation)
 			{
 				this.ReturnType = operators.compilation.FindType(KnownTypeCode.Boolean);
-				this.Parameters.Add(operators.MakeParameter(Type.GetTypeCode(typeof(T1))));
-				this.Parameters.Add(operators.MakeParameter(Type.GetTypeCode(typeof(T2))));
+				parameters.Add(operators.MakeParameter(Type.GetTypeCode(typeof(T1))));
+				parameters.Add(operators.MakeParameter(Type.GetTypeCode(typeof(T2))));
 				this.func = func;
 			}
 			
@@ -1071,16 +1025,18 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 				: base((IMethod)nonLiftedMethod.MemberDefinition, nonLiftedMethod.Substitution)
 			{
 				this.nonLiftedOperator = nonLiftedMethod;
-				var substitution = new MakeNullableVisitor(nonLiftedMethod.Compilation, nonLiftedMethod.Substitution);
-				this.Parameters = base.CreateParameters(substitution);
+				var compilation = nonLiftedMethod.Compilation;
+				var substitution = nonLiftedMethod.Substitution;
+				this.Parameters = base.CreateParameters(
+					type => NullableType.Create(compilation, type.AcceptVisitor(substitution)));
 				// Comparison operators keep the 'bool' return type even when lifted.
 				if (IsComparisonOperator(nonLiftedMethod))
 					this.ReturnType = nonLiftedMethod.ReturnType;
 				else
-					this.ReturnType = nonLiftedMethod.ReturnType.AcceptVisitor(substitution);
+					this.ReturnType = NullableType.Create(compilation, nonLiftedMethod.ReturnType.AcceptVisitor(substitution));
 			}
 
-			public IList<IParameter> NonLiftedParameters => nonLiftedOperator.Parameters;
+			public IReadOnlyList<IParameter> NonLiftedParameters => nonLiftedOperator.Parameters;
 			public IType NonLiftedReturnType => nonLiftedOperator.ReturnType;
 
 			public override bool Equals(object obj)
@@ -1094,38 +1050,6 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 				return nonLiftedOperator.GetHashCode() ^ 0x7191254;
 			}
 		}
-
-		sealed class MakeNullableVisitor : TypeVisitor
-		{
-			readonly ICompilation compilation;
-			readonly TypeParameterSubstitution typeParameterSubstitution;
-
-			public MakeNullableVisitor(ICompilation compilation, TypeParameterSubstitution typeParameterSubstitution)
-			{
-				this.compilation = compilation;
-				this.typeParameterSubstitution = typeParameterSubstitution;
-			}
-
-			public override IType VisitTypeDefinition(ITypeDefinition type)
-			{
-				return NullableType.Create(compilation, type.AcceptVisitor(typeParameterSubstitution));
-			}
-
-			public override IType VisitTypeParameter(ITypeParameter type)
-			{
-				return NullableType.Create(compilation, type.AcceptVisitor(typeParameterSubstitution));
-			}
-
-			public override IType VisitParameterizedType(ParameterizedType type)
-			{
-				return NullableType.Create(compilation, type.AcceptVisitor(typeParameterSubstitution));
-			}
-
-			public override IType VisitOtherType(IType type)
-			{
-				return NullableType.Create(compilation, type.AcceptVisitor(typeParameterSubstitution));
-			}
-		}
 		#endregion
 	}
 
@@ -1136,6 +1060,6 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 	public interface ILiftedOperator : IParameterizedMember
 	{
 		IType NonLiftedReturnType { get; }
-		IList<IParameter> NonLiftedParameters { get; }
+		IReadOnlyList<IParameter> NonLiftedParameters { get; }
 	}
 }

@@ -39,24 +39,26 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		/// <summary>A <see cref="ITypeDefinition"/> that is an enum.</summary>
 		/// <remarks><c>System.Enum</c> itself is TypeKind.Class</remarks>
 		Enum,
-		/// <summary>A <see cref="ITypeDefinition"/> that is a module (VB).</summary>
-		Module,
 		
 		/// <summary>The <c>System.Void</c> type.</summary>
-		/// <see cref="KnownTypeReference.Void"/>
+		/// <see cref="KnownTypeCode.Void"/>
 		Void,
-		
+
+		/// <summary>Type used for invalid expressions and for types whose definition could not be found.</summary>
 		/// <see cref="SpecialType.UnknownType"/>
 		Unknown,
 		/// <summary>The type of the null literal.</summary>
 		/// <see cref="SpecialType.NullType"/>
 		Null,
+		/// <summary>The type of expressions without type (except for null literals, which have <c>TypeKind.Null</c>).</summary>
+		/// <see cref="SpecialType.NoType"/>
+		None,
 		/// <summary>Type representing the C# 'dynamic' type.</summary>
 		/// <see cref="SpecialType.Dynamic"/>
 		Dynamic,
 		/// <summary>Represents missing type arguments in partially parameterized types.</summary>
 		/// <see cref="SpecialType.UnboundTypeArgument"/>
-		/// <see cref="IType.GetNestedTypes(Predicate{ITypeDefinition}, GetMemberOptions)"/>
+		/// <see cref="IType">IType.GetNestedTypes(Predicate{ITypeDefinition}, GetMemberOptions)</see>
 		UnboundTypeArgument,
 		
 		/// <summary>The type is a type parameter.</summary>
@@ -72,14 +74,25 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		/// <summary>A managed reference type</summary>
 		/// <see cref="ByReferenceType"/>
 		ByReference,
-		/// <summary>An anonymous type</summary>
-		/// <see cref="AnonymousType"/>
-		Anonymous,
 		
 		/// <summary>Intersection of several types</summary>
 		/// <see cref="IntersectionType"/>
 		Intersection,
 		/// <see cref="SpecialType.ArgList"/>
 		ArgList,
+		/// <summary>A C# 7 tuple type.
+		/// E.g. <code>(string, int)</code>
+		/// Note: <code>System.ValueTuple&lt;string, int&gt;</code> is not considered a tuple type.
+		/// </summary>
+		/// <see cref="TupleType"/>
+		Tuple,
+		/// <summary>
+		/// Modified type, with optional modifier.
+		/// </summary>
+		ModOpt,
+		/// <summary>
+		/// Modified type, with required modifier.
+		/// </summary>
+		ModReq,
 	}
 }

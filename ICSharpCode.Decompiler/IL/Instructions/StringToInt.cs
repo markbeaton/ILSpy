@@ -17,28 +17,49 @@
 // DEALINGS IN THE SOFTWARE.
 
 
+using System.Collections.Generic;
+
 namespace ICSharpCode.Decompiler.IL
 {
 	partial class StringToInt
 	{
-		public string[] Map { get; }
+		public List<(string Key, int Value)> Map { get; }
 
-		public StringToInt(ILInstruction argument, string[] map)
+		public StringToInt(ILInstruction argument, List<(string Key, int Value)> map)
 			: base(OpCode.StringToInt)
 		{
 			this.Argument = argument;
 			this.Map = map;
 		}
 
+		public StringToInt(ILInstruction argument, string[] map)
+			: this(argument, ArrayToDictionary(map))
+		{
+		}
+
+		static List<(string Key, int Value)> ArrayToDictionary(string[] map)
+		{
+			var dict = new List<(string Key, int Value)>();
+			for (int i = 0; i < map.Length; i++) {
+				dict.Add((map[i], i));
+			}
+			return dict;
+		}
+
 		public override void WriteTo(ITextOutput output, ILAstWritingOptions options)
 		{
-			ILRange.WriteTo(output, options);
+			WriteILRange(output, options);
 			output.Write("string.to.int (");
 			Argument.WriteTo(output, options);
 			output.Write(", { ");
-			for (int i = 0; i < Map.Length; i++) {
+			int i = 0;
+			foreach (var entry in Map) {
 				if (i > 0) output.Write(", ");
-				output.Write($"[{i}] = \"{Map[i]}\"");
+				if (entry.Key is null)
+					output.Write($"[null] = {entry.Value}");
+				else
+					output.Write($"[\"{entry.Key}\"] = {entry.Value}");
+				i++;
 			}
 			output.Write(" })");
 		}

@@ -18,15 +18,20 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 
 using ICSharpCode.Decompiler;
 using ICSharpCode.Decompiler.CSharp;
 using ICSharpCode.Decompiler.Disassembler;
+using ICSharpCode.Decompiler.Metadata;
 using ICSharpCode.Decompiler.IL;
 using ICSharpCode.Decompiler.IL.Transforms;
 using ICSharpCode.Decompiler.TypeSystem;
-using Mono.Cecil;
+
+using SRM = System.Reflection.Metadata;
+using static System.Reflection.Metadata.PEReaderExtensions;
+using ICSharpCode.ILSpy.ViewModels;
 
 namespace ICSharpCode.ILSpy
 {
@@ -57,8 +62,7 @@ namespace ICSharpCode.ILSpy
 		internal static IEnumerable<ILAstLanguage> GetDebugLanguages()
 		{
 			yield return new TypedIL();
-			CSharpDecompiler decompiler = new CSharpDecompiler(ModuleDefinition.CreateModule("Dummy", ModuleKind.Dll), new DecompilerSettings());
-			yield return new BlockIL(decompiler.ILTransforms.ToList());
+			yield return new BlockIL(CSharpDecompiler.GetILTransforms());
 		}
 		
 		public override string FileExtension {
@@ -67,17 +71,11 @@ namespace ICSharpCode.ILSpy
 			}
 		}
 
-		public override string TypeToString(TypeReference type, bool includeNamespace, ICustomAttributeProvider typeAttributes = null)
-		{
-			PlainTextOutput output = new PlainTextOutput();
-			type.WriteTo(output, includeNamespace ? ILNameSyntax.TypeName : ILNameSyntax.ShortTypeName);
-			return output.ToString();
-		}
-
-		public override void DecompileMethod(MethodDefinition method, ITextOutput output, DecompilationOptions options)
+		public override void DecompileMethod(IMethod method, ITextOutput output, DecompilationOptions options)
 		{
 			base.DecompileMethod(method, output, options);
-			new ReflectionDisassembler(output, options.CancellationToken).DisassembleMethodHeader(method);
+			new ReflectionDisassembler(output, options.CancellationToken)
+				.DisassembleMethodHeader(method.ParentModule.PEFile, (SRM.MethodDefinitionHandle)method.MetadataToken);
 			output.WriteLine();
 			output.WriteLine();
 		}
@@ -86,14 +84,17 @@ namespace ICSharpCode.ILSpy
 		{
 			public TypedIL() : base("Typed IL") {}
 			
-			public override void DecompileMethod(MethodDefinition method, ITextOutput output, DecompilationOptions options)
+			public override void DecompileMethod(IMethod method, ITextOutput output, DecompilationOptions options)
 			{
 				base.DecompileMethod(method, output, options);
-				if (!method.HasBody)
+				var module = method.ParentModule.PEFile;
+				var methodDef = module.Metadata.GetMethodDefinition((SRM.MethodDefinitionHandle)method.MetadataToken);
+				if (!methodDef.HasBody())
 					return;
-				var typeSystem = new DecompilerTypeSystem(method.Module);
-				ILReader reader = new ILReader(typeSystem);
-				reader.WriteTypedIL(method.Body, output, options.CancellationToken);
+				var typeSystem = new DecompilerTypeSystem(module, module.GetAssemblyResolver());
+				ILReader reader = new ILReader(typeSystem.MainModule);
+				var methodBody = module.Reader.GetMethodBody(methodDef.RelativeVirtualAddress);
+				reader.WriteTypedIL((SRM.MethodDefinitionHandle)method.MetadataToken, methodBody, output, cancellationToken: options.CancellationToken);
 			}
 		}
 
@@ -106,19 +107,22 @@ namespace ICSharpCode.ILSpy
 				this.transforms = transforms;
 			}
 
-			public override void DecompileMethod(MethodDefinition method, ITextOutput output, DecompilationOptions options)
+			public override void DecompileMethod(IMethod method, ITextOutput output, DecompilationOptions options)
 			{
 				base.DecompileMethod(method, output, options);
-				if (!method.HasBody)
+				var module = method.ParentModule.PEFile;
+				var metadata = module.Metadata;
+				var methodDef = metadata.GetMethodDefinition((SRM.MethodDefinitionHandle)method.MetadataToken);
+				if (!methodDef.HasBody())
 					return;
-				var typeSystem = new DecompilerTypeSystem(method.Module);
-				var specializingTypeSystem = typeSystem.GetSpecializingTypeSystem(new SimpleTypeResolveContext(typeSystem.Resolve(method)));
-				var reader = new ILReader(specializingTypeSystem);
+				IAssemblyResolver assemblyResolver = module.GetAssemblyResolver();
+				var typeSystem = new DecompilerTypeSystem(module, assemblyResolver);
+				var reader = new ILReader(typeSystem.MainModule);
 				reader.UseDebugSymbols = options.DecompilerSettings.UseDebugSymbols;
-				ILFunction il = reader.ReadIL(method.Body, options.CancellationToken);
-				ILTransformContext context = new ILTransformContext(il, typeSystem, options.DecompilerSettings) {
-					CancellationToken = options.CancellationToken
-				};
+				var methodBody = module.Reader.GetMethodBody(methodDef.RelativeVirtualAddress);
+				ILFunction il = reader.ReadIL((SRM.MethodDefinitionHandle)method.MetadataToken, methodBody, kind: ILFunctionKind.TopLevelFunction, cancellationToken: options.CancellationToken);
+				var decompiler = new CSharpDecompiler(typeSystem, options.DecompilerSettings) { CancellationToken = options.CancellationToken };
+				ILTransformContext context = decompiler.CreateILTransformContext(il);
 				context.Stepper.StepLimit = options.StepLimit;
 				context.Stepper.IsDebug = options.IsDebug;
 				try {
@@ -136,7 +140,7 @@ namespace ICSharpCode.ILSpy
 					}
 				}
 				(output as ISmartTextOutput)?.AddButton(Images.ViewCode, "Show Steps", delegate {
-					DebugSteps.Show();
+					Docking.DockWorkspace.Instance.ShowToolPane(DebugStepsPaneModel.PaneContentId);
 				});
 				output.WriteLine();
 				il.WriteTo(output, DebugSteps.Options);

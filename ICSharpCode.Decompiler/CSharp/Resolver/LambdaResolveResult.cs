@@ -30,7 +30,7 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 	/// </summary>
 	public abstract class LambdaResolveResult : ResolveResult
 	{
-		protected LambdaResolveResult() : base(SpecialType.UnknownType)
+		protected LambdaResolveResult() : base(SpecialType.NoType)
 		{
 		}
 		
@@ -69,7 +69,7 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 		/// <summary>
 		/// Gets the list of parameters.
 		/// </summary>
-		public abstract IList<IParameter> Parameters { get; }
+		public abstract IReadOnlyList<IParameter> Parameters { get; }
 		
 		/// <summary>
 		/// Gets the return type of the lambda.
@@ -132,7 +132,7 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 		public override bool IsImplicitlyTyped { get; }
 		public override bool IsAsync => function.IsAsync;
 
-		public override IList<IParameter> Parameters => function.Parameters;
+		public override IReadOnlyList<IParameter> Parameters => function.Parameters;
 		public override IType ReturnType => function.ReturnType;
 
 		public override ResolveResult Body { get; }
@@ -152,7 +152,7 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 				if (this.Parameters.Count != parameterTypes.Length)
 					return Conversion.None;
 				for (int i = 0; i < parameterTypes.Length; ++i) {
-					if (!parameterTypes[i].Equals(this.Parameters[i].Type)) {
+					if (!conversions.IdentityConversion(parameterTypes[i], this.Parameters[i].Type)) {
 						if (IsImplicitlyTyped) {
 							// it's possible that different parameter types also lead to a valid conversion
 							return LambdaConversion.Instance;
@@ -162,7 +162,8 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 					}
 				}
 			}
-			if (returnType.Equals(this.ReturnType)) {
+			if (conversions.IdentityConversion(this.ReturnType, returnType)
+				|| conversions.ImplicitConversion(this.InferredReturnType, returnType).IsValid) {
 				return LambdaConversion.Instance;
 			} else {
 				return Conversion.None;

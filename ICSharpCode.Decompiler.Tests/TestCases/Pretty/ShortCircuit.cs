@@ -34,112 +34,256 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 		
 		public void ExprAnd()
 		{
-			this.B(this.F(0) && this.F(1));
+			B(F(0) && F(1));
 		}
 		
 		public void ExprOr()
 		{
-			this.B(this.F(0) || this.F(1));
+			B(F(0) || F(1));
 		}
 		
 		public void ExprCond()
 		{
-			this.B(this.F(0) ? this.F(1) : this.F(2));
+			B(F(0) ? F(1) : F(2));
 		}
 		
 		public void ExprCondAnd()
 		{
-			this.B((this.F(0) && this.F(1)) ? this.F(2) : this.F(3));
+			B((F(0) && F(1)) ? F(2) : F(3));
+		}
+		
+		public void ExprMix4A()
+		{
+			B(((F(0) || F(1)) && F(2)) || F(3));
+		}
+		
+		public void ExprMix4B()
+		{
+			B((F(0) || F(1)) && (F(2) || F(3)));
+		}
+		
+		public void ExprMix4C()
+		{
+			B((F(0) && F(1)) || (F(2) && F(3)));
 		}
 
 		public void StmtAnd2()
 		{
-			if (this.F(0) && this.F(1)) {
-				this.M1();
+			if (F(0) && F(1)) {
+				M1();
 			} else {
-				this.M2();
+				M2();
 			}
-			this.E();
+			E();
+		}
+
+		public void StmtOr2A()
+		{
+			if (F(0) || F(1)) {
+				M1();
+			}
 		}
 		
-		public void StmtOr2()
+		public void StmtOr2B()
 		{
-			if (this.F(0) || this.F(1)) {
-				this.M1();
+			if (F(0) || F(1)) {
+				M1();
 			} else {
-				this.M2();
+				M2();
 			}
-			this.E();
+			E();
 		}
 
 		public void StmtAnd3()
 		{
-			if (this.F(0) && this.F(1) && this.F(2)) {
-				this.M1();
+			if (F(0) && F(1) && F(2)) {
+				M1();
 			} else {
-				this.M2();
+				M2();
 			}
-			this.E();
+			E();
 		}
 
 		public void StmtOr3()
 		{
-			if (this.F(0) || this.F(1) || this.F(3)) {
-				this.M1();
+			if (F(0) || F(1) || F(2)) {
+				M1();
 			} else {
-				this.M2();
+				M2();
 			}
-			this.E();
+			E();
 		}
 
 		public void StmtOr4()
 		{
-			if (this.GetInt(0) != 0 || this.GetInt(1) != 0) {
-				this.M1();
+			if (GetInt(0) != 0 || GetInt(1) != 0) {
+				M1();
 			} else {
-				this.M2();
+				M2();
 			}
-			this.E();
+			E();
+		}
+
+		public void StmtMix3A()
+		{
+			if ((F(0) || F(1)) && F(2)) {
+				M1();
+			}
+		}
+
+		public void StmtMix3B()
+		{
+			if ((F(0) || F(1)) && F(2)) {
+				M1();
+			} else {
+				M2();
+			}
+		}
+
+		public void StmtMix4V1A()
+		{
+			if (((F(0) || F(1)) && F(2)) || F(3)) {
+				M1();
+			}
+		}
+
+		public void StmtMix4V1B()
+		{
+			if (((F(0) || F(1)) && F(2)) || F(3)) {
+				M1();
+			} else {
+				M2();
+			}
+		}
+
+		public void StmtMix4V2A()
+		{
+			if ((F(0) || F(1)) && (F(2) || F(3))) {
+				M1();
+			}
+		}
+
+		public void StmtMix4V2B()
+		{
+			if ((F(0) || F(1)) && (F(2) || F(3))) {
+				M1();
+			} else {
+				M2();
+			}
+		}
+
+		public void StmtMix4V3A()
+		{
+			if ((F(0) && F(1)) || (F(2) && F(3))) {
+				M1();
+			}
+		}
+
+		public void StmtMix4V3B()
+		{
+			if ((F(0) && F(1)) || (F(2) && F(3))) {
+				M1();
+			} else {
+				M2();
+			}
 		}
 
 		public void StmtComplex()
 		{
-			if (this.F(0) && this.F(1) && !this.F(2) && (this.F(3) || this.F(4))) {
-				this.M1();
+			if (F(0) && F(1) && !F(2) && (F(3) || F(4))) {
+				M1();
 			} else {
-				this.M2();
+				M2();
 			}
-			this.E();
+			E();
 		}
 
 		public void StmtComplex2(int i)
 		{
 			if (i > 1000 || (i >= 1 && i <= 8) || i == 42) {
-				this.M1();
+				M1();
 			} else {
-				this.M2();
+				M2();
 			}
-			this.E();
+			E();
 		}
 
 		public void StmtComplex3(int i)
 		{
 			if (i > 1000 || (i >= 1 && i <= 8) || (i >= 100 && i <= 200) || i == 42) {
-				this.M1();
+				M1();
 			} else {
-				this.M2();
+				M2();
 			}
-			this.E();
+			E();
 		}
 
 		public void StmtComplex4(int i)
 		{
 			if (i > 1000 || (i >= 1 && i <= 8) || i == 42 || i == 23) {
-				this.M1();
+				M1();
 			} else {
-				this.M2();
+				M2();
 			}
-			this.E();
+			E();
+		}
+
+		public void StmtComplex5()
+		{
+			if (F(0)) {
+				if (!F(1) && !F(2)) {
+					return;
+				}
+			} else if (!F(3) || !F(4)) {
+				M2();
+				return;
+			}
+			E();
+		}
+
+		public int StmtComplex6()
+		{
+			if (F(0)) {
+				M1();
+				if (F(1) || F(2)) {
+					return 1;
+				}
+			}
+			return 2;
+		}
+
+		public int InferCorrectOrder()
+		{
+			if (F(1) || F(2)) {
+				return 1;
+			}
+			return 2;
+		}
+
+#if !OPT
+		public void EmptyIf()
+		{
+			if (F(0)) {
+			}
+			if (!F(1)) {
+			}
+			if (F(2) && F(3)) {
+			}
+			if (F(4) || F(5)) {
+			}
+			if (F(0) && F(1) && !F(2) && (F(3) || F(4))) {
+			}
+			E();
+		}
+#endif
+
+		public void PreferLogicalToBitwise(bool a, bool b, int i, float f)
+		{
+			B(a && b);
+			B(a && i == 1);
+			B(i == 1 && a);
+			B(i > i - 3 && a);
+			B(f < 0.1f && a);
 		}
 	}
 }

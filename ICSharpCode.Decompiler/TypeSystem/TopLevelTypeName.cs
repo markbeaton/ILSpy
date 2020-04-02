@@ -27,7 +27,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 	/// This struct cannot refer to nested classes.
 	/// </summary>
 	[Serializable]
-	public struct TopLevelTypeName : IEquatable<TopLevelTypeName>
+	public readonly struct TopLevelTypeName : IEquatable<TopLevelTypeName>
 	{
 		readonly string namespaceName;
 		readonly string name;
@@ -36,9 +36,9 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		public TopLevelTypeName(string namespaceName, string name, int typeParameterCount = 0)
 		{
 			if (namespaceName == null)
-				throw new ArgumentNullException("namespaceName");
+				throw new ArgumentNullException(nameof(namespaceName));
 			if (name == null)
-				throw new ArgumentNullException("name");
+				throw new ArgumentNullException(nameof(name));
 			this.namespaceName = namespaceName;
 			this.name = name;
 			this.typeParameterCount = typeParameterCount;

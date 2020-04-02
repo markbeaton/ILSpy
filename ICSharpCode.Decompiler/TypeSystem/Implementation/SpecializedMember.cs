@@ -40,7 +40,7 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 		protected SpecializedMember(IMember memberDefinition)
 		{
 			if (memberDefinition == null)
-				throw new ArgumentNullException("memberDefinition");
+				throw new ArgumentNullException(nameof(memberDefinition));
 			if (memberDefinition is SpecializedMember)
 				throw new ArgumentException("Member definition cannot be specialized. Please use IMember.Specialize() instead of directly constructing SpecializedMember instances.");
 			
@@ -56,27 +56,6 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			Debug.Assert(declaringType == null);
 			Debug.Assert(returnType == null);
 			this.substitution = TypeParameterSubstitution.Compose(newSubstitution, this.substitution);
-		}
-		
-		public virtual IMemberReference ToReference()
-		{
-			return new SpecializingMemberReference(
-				baseMember.ToReference(),
-				ToTypeReference(substitution.ClassTypeArguments),
-				null);
-		}
-		
-		ISymbolReference ISymbol.ToReference()
-		{
-			return ToReference();
-		}
-		
-		internal static IList<ITypeReference> ToTypeReference(IList<IType> typeArguments)
-		{
-			if (typeArguments == null)
-				return null;
-			else
-				return typeArguments.Select(t => t.ToTypeReference()).ToArray();
 		}
 		
 		internal IMethod WrapAccessor(ref IMethod cachingField, IMethod accessorDefinition)
@@ -132,10 +111,6 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			get { return baseMember.MemberDefinition; }
 		}
 		
-		public IUnresolvedMember UnresolvedMember {
-			get { return baseMember.UnresolvedMember; }
-		}
-		
 		public IType ReturnType {
 			get {
 				var result = LazyInit.VolatileRead(ref this.returnType);
@@ -153,7 +128,9 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 				this.returnType = value;
 			}
 		}
-		
+
+		public System.Reflection.Metadata.EntityHandle MetadataToken => baseMember.MetadataToken;
+
 		public bool IsVirtual {
 			get { return baseMember.IsVirtual; }
 		}
@@ -170,38 +147,18 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			get { return baseMember.SymbolKind; }
 		}
 		
-		public DomRegion Region {
-			get { return baseMember.Region; }
-		}
-		
-		public DomRegion BodyRegion {
-			get { return baseMember.BodyRegion; }
-		}
-		
 		public ITypeDefinition DeclaringTypeDefinition {
 			get { return baseMember.DeclaringTypeDefinition; }
 		}
+
+		IEnumerable<IAttribute> IEntity.GetAttributes() => baseMember.GetAttributes();
 		
-		public IList<IAttribute> Attributes {
-			get { return baseMember.Attributes; }
-		}
-		
-		IList<IMember> implementedInterfaceMembers;
-		
-		public IList<IMember> ImplementedInterfaceMembers {
+		public IEnumerable<IMember> ExplicitlyImplementedInterfaceMembers {
 			get {
-				return LazyInitializer.EnsureInitialized(ref implementedInterfaceMembers, FindImplementedInterfaceMembers);
+				// Note: if the interface is generic, then the interface members should already be specialized,
+				// so we only need to append our substitution.
+				return baseMember.ExplicitlyImplementedInterfaceMembers.Select(m => m.Specialize(substitution));
 			}
-		}
-		
-		IList<IMember> FindImplementedInterfaceMembers()
-		{
-			var definitionImplementations = baseMember.ImplementedInterfaceMembers;
-			IMember[] result = new IMember[definitionImplementations.Count];
-			for (int i = 0; i < result.Length; i++) {
-				result[i] = definitionImplementations[i].Specialize(substitution);
-			}
-			return result;
 		}
 		
 		public bool IsExplicitInterfaceImplementation {
@@ -224,38 +181,6 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			get { return baseMember.IsSealed; }
 		}
 		
-		public bool IsShadowing {
-			get { return baseMember.IsShadowing; }
-		}
-		
-		public bool IsSynthetic {
-			get { return baseMember.IsSynthetic; }
-		}
-		
-		public bool IsPrivate {
-			get { return baseMember.IsPrivate; }
-		}
-		
-		public bool IsPublic {
-			get { return baseMember.IsPublic; }
-		}
-		
-		public bool IsProtected {
-			get { return baseMember.IsProtected; }
-		}
-		
-		public bool IsInternal {
-			get { return baseMember.IsInternal; }
-		}
-		
-		public bool IsProtectedOrInternal {
-			get { return baseMember.IsProtectedOrInternal; }
-		}
-		
-		public bool IsProtectedAndInternal {
-			get { return baseMember.IsProtectedAndInternal; }
-		}
-		
 		public string FullName {
 			get { return baseMember.FullName; }
 		}
@@ -276,13 +201,22 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			get { return baseMember.Compilation; }
 		}
 		
-		public IAssembly ParentAssembly {
-			get { return baseMember.ParentAssembly; }
+		public IModule ParentModule {
+			get { return baseMember.ParentModule; }
 		}
 
 		public virtual IMember Specialize(TypeParameterSubstitution newSubstitution)
 		{
 			return baseMember.Specialize(TypeParameterSubstitution.Compose(newSubstitution, this.substitution));
+		}
+
+		public virtual bool Equals(IMember obj, TypeVisitor typeNormalization)
+		{
+			SpecializedMember other = obj as SpecializedMember;
+			if (other == null)
+				return false;
+			return this.baseMember.Equals(other.baseMember, typeNormalization)
+				&& this.substitution.Equals(other.substitution, typeNormalization);
 		}
 
 		public override bool Equals(object obj)
@@ -317,20 +251,20 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 	
 	public abstract class SpecializedParameterizedMember : SpecializedMember, IParameterizedMember
 	{
-		IList<IParameter> parameters;
+		IReadOnlyList<IParameter> parameters;
 		
 		protected SpecializedParameterizedMember(IParameterizedMember memberDefinition)
 			: base(memberDefinition)
 		{
 		}
 		
-		public IList<IParameter> Parameters {
+		public IReadOnlyList<IParameter> Parameters {
 			get {
 				var result = LazyInit.VolatileRead(ref this.parameters);
 				if (result != null)
 					return result;
 				else
-					return LazyInit.GetOrSet(ref this.parameters, CreateParameters(this.Substitution));
+					return LazyInit.GetOrSet(ref this.parameters, CreateParameters(t => t.AcceptVisitor(this.Substitution)));
 			}
 			protected set {
 				// This setter is used for LiftedUserDefinedOperator, a special case of specialized member
@@ -342,23 +276,19 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			}
 		}
 		
-		protected IList<IParameter> CreateParameters(TypeVisitor substitution)
+		protected IParameter[] CreateParameters(Func<IType, IType> substitution)
 		{
 			var paramDefs = ((IParameterizedMember)this.baseMember).Parameters;
 			if (paramDefs.Count == 0) {
-				return EmptyList<IParameter>.Instance;
+				return Empty<IParameter>.Array;
 			} else {
 				var parameters = new IParameter[paramDefs.Count];
 				for (int i = 0; i < parameters.Length; i++) {
 					var p = paramDefs[i];
-					IType newType = p.Type.AcceptVisitor(substitution);
-					parameters[i] = new DefaultParameter(
-						newType, p.Name, this,
-						p.Region, p.Attributes, p.IsRef, p.IsOut,
-						p.IsParams, p.IsOptional, p.ConstantValue
-					);
+					IType newType = substitution(p.Type);
+					parameters[i] = new SpecializedParameter(p, newType, this);
 				}
-				return Array.AsReadOnly(parameters);
+				return parameters;
 			}
 		}
 		

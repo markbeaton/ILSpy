@@ -76,15 +76,17 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 	/// </summary>
 	public class MethodGroupResolveResult : ResolveResult
 	{
-		readonly IList<MethodListWithDeclaringType> methodLists;
-		readonly IList<IType> typeArguments;
+		readonly IReadOnlyList<MethodListWithDeclaringType> methodLists;
+		readonly IReadOnlyList<IType> typeArguments;
 		readonly ResolveResult targetResult;
 		readonly string methodName;
 		
-		public MethodGroupResolveResult(ResolveResult targetResult, string methodName, IList<MethodListWithDeclaringType> methods, IList<IType> typeArguments) : base(SpecialType.UnknownType)
+		public MethodGroupResolveResult(ResolveResult targetResult, string methodName, 
+			IReadOnlyList<MethodListWithDeclaringType> methods, IReadOnlyList<IType> typeArguments)
+			: base(SpecialType.NoType)
 		{
 			if (methods == null)
-				throw new ArgumentNullException("methods");
+				throw new ArgumentNullException(nameof(methods));
 			this.targetResult = targetResult;
 			this.methodName = methodName;
 			this.methodLists = methods;
@@ -132,7 +134,7 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 		/// <summary>
 		/// Gets the type arguments that were explicitly provided.
 		/// </summary>
-		public IList<IType> TypeArguments {
+		public IReadOnlyList<IType> TypeArguments {
 			get { return typeArguments; }
 		}
 		
@@ -172,12 +174,12 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 			}
 			return extensionMethods ?? Enumerable.Empty<IEnumerable<IMethod>>();
 		}
-		
+
 		/// <summary>
 		/// Gets the eligible extension methods.
 		/// </summary>
 		/// <param name="substituteInferredTypes">
-		/// Specifies whether to produce a <see cref="SpecializedMethod"/>
+		/// Specifies whether to produce a <c>SpecializedMethod</c>
 		/// when type arguments could be inferred from <see cref="TargetType"/>.
 		/// This setting is only used for inferred types and has no effect if the type parameters are
 		/// specified explicitly.

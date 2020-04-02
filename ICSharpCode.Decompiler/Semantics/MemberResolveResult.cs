@@ -48,7 +48,7 @@ namespace ICSharpCode.Decompiler.Semantics
 			if (field != null) {
 				isConstant = field.IsConst;
 				if (isConstant)
-					constantValue = field.ConstantValue;
+					constantValue = field.GetConstantValue();
 			}
 		}
 		
@@ -62,7 +62,7 @@ namespace ICSharpCode.Decompiler.Semantics
 			if (field != null) {
 				isConstant = field.IsConst;
 				if (isConstant)
-					constantValue = field.ConstantValue;
+					constantValue = field.GetConstantValue();
 			}
 		}
 		
@@ -72,10 +72,12 @@ namespace ICSharpCode.Decompiler.Semantics
 				case SymbolKind.Constructor:
 					return member.DeclaringType ?? SpecialType.UnknownType;
 				case SymbolKind.Field:
-					if (((IField)member).IsFixed)
-						return new PointerType(member.ReturnType);
+					//if (((IField)member).IsFixed)
+					//	return new PointerType(member.ReturnType);
 					break;
 			}
+			if (member.ReturnType.Kind == TypeKind.ByReference)
+				return ((ByReferenceType)member.ReturnType).ElementType;
 			return member.ReturnType;
 		}
 		
@@ -136,11 +138,6 @@ namespace ICSharpCode.Decompiler.Semantics
 		public override string ToString()
 		{
 			return string.Format(CultureInfo.InvariantCulture, "[{0} {1}]", GetType().Name, member);
-		}
-		
-		public override DomRegion GetDefinitionRegion()
-		{
-			return member.Region;
 		}
 	}
 }

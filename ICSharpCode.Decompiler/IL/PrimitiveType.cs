@@ -16,25 +16,37 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-using Mono.Cecil;
+using System.Reflection.Metadata;
 
 namespace ICSharpCode.Decompiler.IL
 {
 	public enum PrimitiveType : byte
 	{
-		None = 0,
-		I1 = MetadataType.SByte,
-		I2 = MetadataType.Int16,
-		I4 = MetadataType.Int32,
-		I8 = MetadataType.Int64,
-		R4 = MetadataType.Single,
-		R8 = MetadataType.Double,
-		U1 = MetadataType.Byte,
-		U2 = MetadataType.UInt16,
-		U4 = MetadataType.UInt32,
-		U8 = MetadataType.UInt64,
-		I = MetadataType.IntPtr,
-		U = MetadataType.UIntPtr,
-		Ref = MetadataType.ByReference
+		None,
+		I1 = PrimitiveTypeCode.SByte,
+		I2 = PrimitiveTypeCode.Int16,
+		I4 = PrimitiveTypeCode.Int32,
+		I8 = PrimitiveTypeCode.Int64,
+		R4 = PrimitiveTypeCode.Single,
+		R8 = PrimitiveTypeCode.Double,
+		U1 = PrimitiveTypeCode.Byte,
+		U2 = PrimitiveTypeCode.UInt16,
+		U4 = PrimitiveTypeCode.UInt32,
+		U8 = PrimitiveTypeCode.UInt64,
+		I = PrimitiveTypeCode.IntPtr,
+		U = PrimitiveTypeCode.UIntPtr,
+		/// <summary>Managed reference</summary>
+		Ref = 16,
+		/// <summary>Floating point type of unspecified size:
+		/// usually 80 bits on x86 (when the runtime uses x87 instructions);
+		/// but only 64-bit on x64.
+		/// This only occurs for "conv.r.un" instructions. The C# compiler usually follows those
+		/// with a "conv.r4" or "conv.r8" instruction to indicate the desired float type, so
+		/// we only use this as conversion target type and don't bother tracking it as its own stack type:
+		/// basically everything treats R identical to R8, except for the (conv.r.un + conv.r[48] => conv.r[48].un)
+		/// combining logic which should not combine (conv.r.un + conv.r8 + conv.r4) into a single conv.r4.un.
+		/// </summary>
+		R = 254,
+		Unknown = 255
 	}
 }

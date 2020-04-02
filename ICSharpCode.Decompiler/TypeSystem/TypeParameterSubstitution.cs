@@ -18,6 +18,7 @@
 
 using System.Collections.Generic;
 using System.Text;
+using ICSharpCode.Decompiler.TypeSystem.Implementation;
 
 namespace ICSharpCode.Decompiler.TypeSystem
 {
@@ -31,8 +32,8 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		/// </summary>
 		public static readonly TypeParameterSubstitution Identity = new TypeParameterSubstitution(null, null);
 		
-		readonly IList<IType> classTypeArguments;
-		readonly IList<IType> methodTypeArguments;
+		readonly IReadOnlyList<IType> classTypeArguments;
+		readonly IReadOnlyList<IType> methodTypeArguments;
 		
 		/// <summary>
 		/// Creates a new type parameter substitution.
@@ -45,7 +46,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		/// The type arguments to substitute for method type parameters.
 		/// Pass <c>null</c> to keep method type parameters unmodified.
 		/// </param>
-		public TypeParameterSubstitution(IList<IType> classTypeArguments, IList<IType> methodTypeArguments)
+		public TypeParameterSubstitution(IReadOnlyList<IType> classTypeArguments, IReadOnlyList<IType> methodTypeArguments)
 		{
 			this.classTypeArguments = classTypeArguments;
 			this.methodTypeArguments = methodTypeArguments;
@@ -55,7 +56,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		/// Gets the list of class type arguments.
 		/// Returns <c>null</c> if this substitution keeps class type parameters unmodified.
 		/// </summary>
-		public IList<IType> ClassTypeArguments {
+		public IReadOnlyList<IType> ClassTypeArguments {
 			get { return classTypeArguments; }
 		}
 		
@@ -63,7 +64,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		/// Gets the list of method type arguments.
 		/// Returns <c>null</c> if this substitution keeps method type parameters unmodified.
 		/// </summary>
-		public IList<IType> MethodTypeArguments {
+		public IReadOnlyList<IType> MethodTypeArguments {
 			get { return methodTypeArguments; }
 		}
 		
@@ -87,7 +88,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 			return new TypeParameterSubstitution(classTypeArguments, methodTypeArguments);
 		}
 		
-		static IList<IType> GetComposedTypeArguments(IList<IType> input, TypeParameterSubstitution substitution)
+		static IReadOnlyList<IType> GetComposedTypeArguments(IReadOnlyList<IType> input, TypeParameterSubstitution substitution)
 		{
 			IType[] result = new IType[input.Count];
 			for (int i = 0; i < result.Length; i++) {
@@ -96,8 +97,16 @@ namespace ICSharpCode.Decompiler.TypeSystem
 			return result;
 		}
 		#endregion
-		
+
 		#region Equals and GetHashCode implementation
+		public bool Equals(TypeParameterSubstitution other, TypeVisitor normalization)
+		{
+			if (other == null)
+				return false;
+			return TypeListEquals(classTypeArguments, other.classTypeArguments, normalization)
+				&& TypeListEquals(methodTypeArguments, other.methodTypeArguments, normalization);
+		}
+
 		public override bool Equals(object obj)
 		{
 			TypeParameterSubstitution other = obj as TypeParameterSubstitution;
@@ -114,7 +123,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 			}
 		}
 		
-		static bool TypeListEquals(IList<IType> a, IList<IType> b)
+		static bool TypeListEquals(IReadOnlyList<IType> a, IReadOnlyList<IType> b)
 		{
 			if (a == b)
 				return true;
@@ -128,8 +137,25 @@ namespace ICSharpCode.Decompiler.TypeSystem
 			}
 			return true;
 		}
-		
-		static int TypeListHashCode(IList<IType> obj)
+
+		static bool TypeListEquals(IReadOnlyList<IType> a, IReadOnlyList<IType> b, TypeVisitor normalization)
+		{
+			if (a == b)
+				return true;
+			if (a == null || b == null)
+				return false;
+			if (a.Count != b.Count)
+				return false;
+			for (int i = 0; i < a.Count; i++) {
+				var an = a[i].AcceptVisitor(normalization);
+				var bn = b[i].AcceptVisitor(normalization);
+				if (!an.Equals(bn))
+					return false;
+			}
+			return true;
+		}
+
+		static int TypeListHashCode(IReadOnlyList<IType> obj)
 		{
 			if (obj == null)
 				return 0;
@@ -161,7 +187,21 @@ namespace ICSharpCode.Decompiler.TypeSystem
 				return base.VisitTypeParameter(type);
 			}
 		}
-		
+
+		public override IType VisitNullabilityAnnotatedType(NullabilityAnnotatedType type)
+		{
+			if (type is NullabilityAnnotatedTypeParameter tp) {
+				if (tp.Nullability == Nullability.Nullable) {
+					return VisitTypeParameter(tp).ChangeNullability(Nullability.Nullable);
+				} else {
+					// T! substituted with T=oblivious string should result in oblivious string
+					return VisitTypeParameter(tp);
+				}
+			} else {
+				return base.VisitNullabilityAnnotatedType(type);
+			}
+		}
+
 		public override string ToString()
 		{
 			StringBuilder b = new StringBuilder();
@@ -175,6 +215,10 @@ namespace ICSharpCode.Decompiler.TypeSystem
 					b.Append(" -> ");
 					b.Append(classTypeArguments[i].ReflectionName);
 				}
+				if (classTypeArguments.Count == 0) {
+					if (first) first = false; else b.Append(", ");
+					b.Append("[]");
+				}
 			}
 			if (methodTypeArguments != null) {
 				for (int i = 0; i < methodTypeArguments.Count; i++) {
@@ -183,6 +227,10 @@ namespace ICSharpCode.Decompiler.TypeSystem
 					b.Append(i);
 					b.Append(" -> ");
 					b.Append(methodTypeArguments[i].ReflectionName);
+				}
+				if (methodTypeArguments.Count == 0) {
+					if (first) first = false; else b.Append(", ");
+					b.Append("[]");
 				}
 			}
 			b.Append(']');

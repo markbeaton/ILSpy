@@ -40,6 +40,7 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 		}
 
 #if LEGACY_CSC
+		// roslyn optimizes out the try-finally; mcs has a compiler bug on using(null-literal)
 		public void SimpleUsingNullStatement()
 		{
 			using (null) {
@@ -89,7 +90,7 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 		private void UsingStatementOnNullableStruct(UsingStruct? us)
 		{
 			using (us) {
-				Console.WriteLine("using-body: " + us);
+				Console.WriteLine("using-body: " + us.ToString());
 			}
 		}
 

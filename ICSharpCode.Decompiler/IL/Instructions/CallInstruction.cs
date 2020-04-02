@@ -64,6 +64,26 @@ namespace ICSharpCode.Decompiler.IL
 			this.Method = method;
 			this.Arguments = new InstructionCollection<ILInstruction>(this, 0);
 		}
+
+		/// <summary>
+		/// Gets whether this is an instance call (i.e. whether the first argument is the 'this' pointer).
+		/// </summary>
+		public bool IsInstanceCall {
+			get { return !(Method.IsStatic || OpCode == OpCode.NewObj); }
+		}
+
+		/// <summary>
+		/// Gets the parameter for the argument with the specified index.
+		/// Returns null for the <c>this</c> parameter.
+		/// </summary>
+		public IParameter GetParameter(int argumentIndex)
+		{
+			int firstParamIndex = (Method.IsStatic || OpCode == OpCode.NewObj) ? 0 : 1;
+			if (argumentIndex < firstParamIndex) {
+				return null; // asking for 'this' parameter
+			}
+			return Method.Parameters[argumentIndex - firstParamIndex];
+		}
 		
 		public override StackType ResultType {
 			get {
@@ -78,12 +98,21 @@ namespace ICSharpCode.Decompiler.IL
 		/// Gets the expected stack type for passing the this pointer in a method call.
 		/// Returns StackType.O for reference types (this pointer passed as object reference),
 		/// and StackType.Ref for type parameters and value types (this pointer passed as managed reference).
+		/// 
+		/// Returns StackType.Unknown if the input type is unknown.
 		/// </summary>
 		internal static StackType ExpectedTypeForThisPointer(IType type)
 		{
 			if (type.Kind == TypeKind.TypeParameter)
 				return StackType.Ref;
-			return type.IsReferenceType == true ? StackType.O : StackType.Ref;
+			switch (type.IsReferenceType) {
+				case true:
+					return StackType.O;
+				case false:
+					return StackType.Ref;
+				default:
+					return StackType.Unknown;
+			}
 		}
 
 		internal override void CheckInvariant(ILPhase phase)
@@ -92,18 +121,18 @@ namespace ICSharpCode.Decompiler.IL
 			int firstArgument = (OpCode != OpCode.NewObj && !Method.IsStatic) ? 1 : 0;
 			Debug.Assert(Method.Parameters.Count + firstArgument == Arguments.Count);
 			if (firstArgument == 1) {
-				Debug.Assert(Arguments[0].ResultType == ExpectedTypeForThisPointer(ConstrainedTo ?? Method.DeclaringType),
-					$"Stack type mismatch in 'this' argument in call to {Method.Name}()");
+				if (!(Arguments[0].ResultType == ExpectedTypeForThisPointer(ConstrainedTo ?? Method.DeclaringType)))
+					Debug.Fail($"Stack type mismatch in 'this' argument in call to {Method.Name}()");
 			}
 			for (int i = 0; i < Method.Parameters.Count; ++i) {
-				Debug.Assert(Arguments[firstArgument + i].ResultType == Method.Parameters[i].Type.GetStackType(),
-					$"Stack type mismatch in parameter {i} in call to {Method.Name}()");
+				if (!(Arguments[firstArgument + i].ResultType == Method.Parameters[i].Type.GetStackType()))
+					Debug.Fail($"Stack type mismatch in parameter {i} in call to {Method.Name}()");
 			}
 		}
 
 		public override void WriteTo(ITextOutput output, ILAstWritingOptions options)
 		{
-			ILRange.WriteTo(output, options);
+			WriteILRange(output, options);
 			if (ConstrainedTo != null) {
 				output.Write("constrained[");
 				ConstrainedTo.WriteTo(output, ILNameSyntax.ShortTypeName);

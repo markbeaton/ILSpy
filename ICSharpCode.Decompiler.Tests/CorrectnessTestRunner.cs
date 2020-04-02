@@ -16,6 +16,7 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+using System;
 using System.CodeDom.Compiler;
 using System.IO;
 using System.Linq;
@@ -25,10 +26,10 @@ using NUnit.Framework;
 
 namespace ICSharpCode.Decompiler.Tests
 {
-	[TestFixture]
+	[TestFixture, Parallelizable(ParallelScope.All)]
 	public class CorrectnessTestRunner
 	{
-		const string TestCasePath = DecompilerTestBase.TestCasePath + "/Correctness";
+		static readonly string TestCasePath = Tester.TestCasePath + "/Correctness";
 
 		[Test]
 		public void AllFilesHaveTests()
@@ -38,17 +39,33 @@ namespace ICSharpCode.Decompiler.Tests
 				.Select(m => m.Name)
 				.ToArray();
 			foreach (var file in new DirectoryInfo(TestCasePath).EnumerateFiles()) {
-				if (file.Extension == ".txt" || file.Extension == ".exe")
+				if (file.Extension == ".txt" || file.Extension == ".exe" || file.Extension == ".config")
 					continue;
 				var testName = Path.GetFileNameWithoutExtension(file.Name);
 				Assert.Contains(testName, testNames);
 			}
 		}
 
+		static readonly CompilerOptions[] noMonoOptions =
+		{
+			CompilerOptions.None,
+			CompilerOptions.Optimize,
+			CompilerOptions.UseRoslyn,
+			CompilerOptions.Optimize | CompilerOptions.UseRoslyn,
+		};
+
 		static readonly CompilerOptions[] defaultOptions =
 		{
 			CompilerOptions.None,
 			CompilerOptions.Optimize,
+			CompilerOptions.UseRoslyn,
+			CompilerOptions.Optimize | CompilerOptions.UseRoslyn,
+			CompilerOptions.UseMcs,
+			CompilerOptions.Optimize | CompilerOptions.UseMcs
+		};
+
+		static readonly CompilerOptions[] roslynOnlyOptions =
+		{
 			CompilerOptions.UseRoslyn,
 			CompilerOptions.Optimize | CompilerOptions.UseRoslyn
 		};
@@ -66,8 +83,14 @@ namespace ICSharpCode.Decompiler.Tests
 		}
 
 		[Test]
-		public void FloatingPointArithmetic([ValueSource("defaultOptions")] CompilerOptions options)
+		public void FloatingPointArithmetic([ValueSource("noMonoOptions")] CompilerOptions options, [Values(32, 64)] int bits)
 		{
+			// The behavior of the #1794 incorrect `(float)(double)val` cast only causes test failures
+			// for some runtime+compiler combinations.
+			if (bits == 32)
+				options |= CompilerOptions.Force32Bit;
+			// Mono is excluded because we never use it for the second pass, so the test ends up failing
+			// due to some Mono vs. Roslyn compiler differences.
 			RunCS(options: options);
 		}
 
@@ -144,9 +167,15 @@ namespace ICSharpCode.Decompiler.Tests
 		}
 
 		[Test]
-		public void UndocumentedExpressions([ValueSource("defaultOptions")] CompilerOptions options)
+		public void UndocumentedExpressions([ValueSource("noMonoOptions")] CompilerOptions options)
 		{
 			RunCS(options: options);
+		}
+
+		[Test]
+		public void Uninit([ValueSource("noMonoOptions")] CompilerOptions options)
+		{
+			RunVB(options: options);
 		}
 
 		[Test]
@@ -163,6 +192,12 @@ namespace ICSharpCode.Decompiler.Tests
 
 		[Test]
 		public void ExpressionTrees([ValueSource("defaultOptions")] CompilerOptions options)
+		{
+			RunCS(options: options);
+		}
+
+		[Test]
+		public void NullPropagation([ValueSource("roslynOnlyOptions")] CompilerOptions options)
 		{
 			RunCS(options: options);
 		}
@@ -186,9 +221,15 @@ namespace ICSharpCode.Decompiler.Tests
 		}
 
 		[Test]
+		public void StackTests()
+		{
+			RunIL("StackTests.il");
+		}
+
+		[Test]
 		public void StackTypes([Values(false, true)] bool force32Bit)
 		{
-			CompilerOptions compiler = CompilerOptions.UseDebug;
+			CompilerOptions compiler = CompilerOptions.UseRoslyn | CompilerOptions.UseDebug;
 			AssemblerOptions asm = AssemblerOptions.None;
 			if (force32Bit) {
 				compiler |= CompilerOptions.Force32Bit;
@@ -200,6 +241,9 @@ namespace ICSharpCode.Decompiler.Tests
 		[Test]
 		public void UnsafeCode([ValueSource("defaultOptions")] CompilerOptions options)
 		{
+			if (options.HasFlag(CompilerOptions.UseMcs)) {
+				Assert.Ignore("Decompiler bug with mono!");
+			}
 			RunCS(options: options);
 		}
 
@@ -224,11 +268,14 @@ namespace ICSharpCode.Decompiler.Tests
 		[Test]
 		public void YieldReturn([ValueSource("defaultOptions")] CompilerOptions options)
 		{
+			if (options.HasFlag(CompilerOptions.UseMcs)) {
+				Assert.Ignore("Decompiler bug with mono!");
+			}
 			RunCS(options: options);
 		}
 
 		[Test]
-		public void Async([Values(CompilerOptions.None, CompilerOptions.Optimize)] CompilerOptions options)
+		public void Async([ValueSource("noMonoOptions")] CompilerOptions options)
 		{
 			RunCS(options: options);
 		}
@@ -240,8 +287,17 @@ namespace ICSharpCode.Decompiler.Tests
 		}
 
 		[Test]
+		public void StringConcat([ValueSource("defaultOptions")] CompilerOptions options)
+		{
+			RunCS(options: options);
+		}
+
+		[Test]
 		public void MiniJSON([ValueSource("defaultOptions")] CompilerOptions options)
 		{
+			if (options.HasFlag(CompilerOptions.UseMcs)) {
+				Assert.Ignore("Decompiler bug with mono!");
+			}
 			RunCS(options: options);
 		}
 
@@ -254,13 +310,27 @@ namespace ICSharpCode.Decompiler.Tests
 			try {
 				outputFile = Tester.CompileCSharp(Path.Combine(TestCasePath, testFileName), options,
 					outputFileName: Path.Combine(TestCasePath, testOutputFileName));
-				string decompiledCodeFile = Tester.DecompileCSharp(outputFile.PathToAssembly);
+				string decompiledCodeFile = Tester.DecompileCSharp(outputFile.PathToAssembly, Tester.GetSettings(options));
+				if (options.HasFlag(CompilerOptions.UseMcs)) {
+					// For second pass, use roslyn instead of mcs.
+					// mcs has some compiler bugs that cause it to not accept ILSpy-generated code,
+					// for example when there's unreachable code due to other compiler bugs in the first mcs run.
+					options &= ~CompilerOptions.UseMcs;
+					options |= CompilerOptions.UseRoslyn;
+					// Also, add an .exe.config so that we consistently use the .NET 4.x runtime.
+					File.WriteAllText(outputFile.PathToAssembly + ".config", @"<?xml version=""1.0"" encoding=""utf-8""?>
+<configuration>
+	<startup>
+		<supportedRuntime version=""v4.0"" sku="".NETFramework,Version=v4.0,Profile=Client"" />
+	</startup>
+</configuration>");
+				}
 				decompiledOutputFile = Tester.CompileCSharp(decompiledCodeFile, options);
 				
 				Tester.RunAndCompareOutput(testFileName, outputFile.PathToAssembly, decompiledOutputFile.PathToAssembly, decompiledCodeFile);
 				
-				File.Delete(decompiledCodeFile);
-				File.Delete(decompiledOutputFile.PathToAssembly);
+				Tester.RepeatOnIOError(() => File.Delete(decompiledCodeFile));
+				Tester.RepeatOnIOError(() => File.Delete(decompiledOutputFile.PathToAssembly));
 			} finally {
 				if (outputFile != null)
 					outputFile.TempFiles.Delete();
@@ -268,7 +338,32 @@ namespace ICSharpCode.Decompiler.Tests
 					decompiledOutputFile.TempFiles.Delete();
 			}
 		}
-		
+
+		void RunVB([CallerMemberName] string testName = null, CompilerOptions options = CompilerOptions.UseDebug)
+		{
+			options |= CompilerOptions.ReferenceVisualBasic;
+			string testFileName = testName + ".vb";
+			string testOutputFileName = testName + Tester.GetSuffix(options) + ".exe";
+			CompilerResults outputFile = null, decompiledOutputFile = null;
+
+			try {
+				outputFile = Tester.CompileVB(Path.Combine(TestCasePath, testFileName), options,
+					outputFileName: Path.Combine(TestCasePath, testOutputFileName));
+				string decompiledCodeFile = Tester.DecompileCSharp(outputFile.PathToAssembly, Tester.GetSettings(options));
+				decompiledOutputFile = Tester.CompileCSharp(decompiledCodeFile, options);
+
+				Tester.RunAndCompareOutput(testFileName, outputFile.PathToAssembly, decompiledOutputFile.PathToAssembly, decompiledCodeFile);
+
+				Tester.RepeatOnIOError(() => File.Delete(decompiledCodeFile));
+				Tester.RepeatOnIOError(() => File.Delete(decompiledOutputFile.PathToAssembly));
+			} finally {
+				if (outputFile != null)
+					outputFile.TempFiles.Delete();
+				if (decompiledOutputFile != null)
+					decompiledOutputFile.TempFiles.Delete();
+			}
+		}
+
 		void RunIL(string testFileName, CompilerOptions options = CompilerOptions.UseDebug, AssemblerOptions asmOptions = AssemblerOptions.None)
 		{
 			string outputFile = null;
@@ -276,13 +371,13 @@ namespace ICSharpCode.Decompiler.Tests
 
 			try {
 				outputFile = Tester.AssembleIL(Path.Combine(TestCasePath, testFileName), asmOptions);
-				string decompiledCodeFile = Tester.DecompileCSharp(outputFile);
+				string decompiledCodeFile = Tester.DecompileCSharp(outputFile, Tester.GetSettings(options));
 				decompiledOutputFile = Tester.CompileCSharp(decompiledCodeFile, options);
 				
 				Tester.RunAndCompareOutput(testFileName, outputFile, decompiledOutputFile.PathToAssembly, decompiledCodeFile);
-				
-				File.Delete(decompiledCodeFile);
-				File.Delete(decompiledOutputFile.PathToAssembly);
+
+				Tester.RepeatOnIOError(() => File.Delete(decompiledCodeFile));
+				Tester.RepeatOnIOError(() => File.Delete(decompiledOutputFile.PathToAssembly));
 			} finally {
 				if (decompiledOutputFile != null)
 					decompiledOutputFile.TempFiles.Delete();

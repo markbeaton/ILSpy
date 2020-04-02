@@ -38,11 +38,11 @@ namespace ICSharpCode.Decompiler.Semantics
 		static IType UnpackTypeIfByRefParameter(IVariable variable)
 		{
 			if (variable == null)
-				throw new ArgumentNullException("variable");
+				throw new ArgumentNullException(nameof(variable));
 			IType type = variable.Type;
 			if (type.Kind == TypeKind.ByReference) {
 				IParameter p = variable as IParameter;
-				if (p != null && (p.IsRef || p.IsOut))
+				if (p != null && p.ReferenceKind != ReferenceKind.None)
 					return ((ByReferenceType)type).ElementType;
 			}
 			return type;
@@ -61,17 +61,12 @@ namespace ICSharpCode.Decompiler.Semantics
 		}
 		
 		public override object ConstantValue {
-			get { return IsParameter ? null : variable.ConstantValue; }
+			get { return IsParameter ? null : variable.GetConstantValue(); }
 		}
 		
 		public override string ToString()
 		{
 			return string.Format(CultureInfo.InvariantCulture, "[LocalResolveResult {0}]", variable);
-		}
-		
-		public override DomRegion GetDefinitionRegion()
-		{
-			return variable.Region;
 		}
 	}
 }

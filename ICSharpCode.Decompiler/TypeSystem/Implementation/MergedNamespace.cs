@@ -44,9 +44,9 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 		public MergedNamespace(ICompilation compilation, INamespace[] namespaces, string externAlias = null)
 		{
 			if (compilation == null)
-				throw new ArgumentNullException("compilation");
+				throw new ArgumentNullException(nameof(compilation));
 			if (namespaces == null)
-				throw new ArgumentNullException("namespaces");
+				throw new ArgumentNullException(nameof(namespaces));
 			this.compilation = compilation;
 			this.namespaces = namespaces;
 			this.externAlias = externAlias;
@@ -60,9 +60,9 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 		public MergedNamespace(INamespace parentNamespace, INamespace[] namespaces)
 		{
 			if (parentNamespace == null)
-				throw new ArgumentNullException("parentNamespace");
+				throw new ArgumentNullException(nameof(parentNamespace));
 			if (namespaces == null)
-				throw new ArgumentNullException("namespaces");
+				throw new ArgumentNullException(nameof(namespaces));
 			this.parentNamespace = parentNamespace;
 			this.namespaces = namespaces;
 			this.compilation = parentNamespace.Compilation;
@@ -99,8 +99,8 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			get { return compilation; }
 		}
 		
-		public IEnumerable<IAssembly> ContributingAssemblies {
-			get { return namespaces.SelectMany(ns => ns.ContributingAssemblies); }
+		public IEnumerable<IModule> ContributingModules {
+			get { return namespaces.SelectMany(ns => ns.ContributingModules); }
 		}
 		
 		public IEnumerable<INamespace> ChildNamespaces {
@@ -136,7 +136,7 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			foreach (var ns in namespaces) {
 				ITypeDefinition typeDef = ns.GetTypeDefinition(name, typeParameterCount);
 				if (typeDef != null) {
-					if (typeDef.IsPublic) {
+					if (typeDef.Accessibility == Accessibility.Public) {
 						// Prefer accessible types over non-accessible types.
 						return typeDef;
 						// || (typeDef.IsInternal && typeDef.ParentAssembly.InternalsVisibleTo(...))
@@ -154,11 +154,6 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 		{
 			return string.Format(CultureInfo.InvariantCulture, "[MergedNamespace {0}{1} (from {2} assemblies)]",
 			                     externAlias != null ? externAlias + "::" : null, this.FullName, this.namespaces.Length);
-		}
-
-		public ISymbolReference ToReference()
-		{
-			return new MergedNamespaceReference(externAlias, FullName);
 		}
 	}
 }

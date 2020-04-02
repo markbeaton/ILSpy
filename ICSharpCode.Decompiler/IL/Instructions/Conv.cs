@@ -48,7 +48,7 @@ namespace ICSharpCode.Decompiler.IL
 		/// <summary>
 		/// Converts from the current precision available on the evaluation stack to the precision specified by
 		/// the <c>TargetType</c>.
-		/// Uses "round-to-nearest" mode is the precision is reduced.
+		/// Uses "round-to-nearest" mode if the precision is reduced.
 		/// </summary>
 		FloatPrecisionChange,
 		/// <summary>
@@ -143,6 +143,8 @@ namespace ICSharpCode.Decompiler.IL
 		/// </summary>
 		/// <remarks>
 		/// For lifted conversions, corresponds to the underlying target type.
+		/// 
+		/// Target type == PrimitiveType.None can happen for implicit conversions to O in invalid IL.
 		/// </remarks>
 		public readonly PrimitiveType TargetType;
 		
@@ -154,21 +156,21 @@ namespace ICSharpCode.Decompiler.IL
 		public Conv(ILInstruction argument, StackType inputType, Sign inputSign, PrimitiveType targetType, bool checkForOverflow, bool isLifted = false)
 			: base(OpCode.Conv, argument)
 		{
-			bool needsSign = checkForOverflow || targetType == PrimitiveType.R4 || targetType == PrimitiveType.R8;
+			bool needsSign = checkForOverflow || (!inputType.IsFloatType() && targetType.IsFloatType());
 			Debug.Assert(!(needsSign && inputSign == Sign.None));
-			this.InputType = inputType;
 			this.InputSign = needsSign ? inputSign : Sign.None;
+			this.InputType = inputType;
 			this.TargetType = targetType;
 			this.CheckForOverflow = checkForOverflow;
 			this.Kind = GetConversionKind(targetType, this.InputType, this.InputSign);
-			Debug.Assert(Kind != ConversionKind.Invalid);
+			// Debug.Assert(Kind != ConversionKind.Invalid); // invalid conversion can happen with invalid IL/missing references
 			this.IsLifted = isLifted;
 		}
 
 		internal override void CheckInvariant(ILPhase phase)
 		{
 			base.CheckInvariant(phase);
-			Debug.Assert(Kind != ConversionKind.Invalid);
+			// Debug.Assert(Kind != ConversionKind.Invalid); // invalid conversion can happen with invalid IL/missing references
 			Debug.Assert(Argument.ResultType == (IsLifted ? StackType.O : InputType));
 			Debug.Assert(!(IsLifted && Kind == ConversionKind.StopGCTracking));
 		}
@@ -262,6 +264,7 @@ namespace ICSharpCode.Decompiler.IL
 						default:
 							return ConversionKind.Invalid;
 					}
+				case PrimitiveType.R:
 				case PrimitiveType.R8:
 					switch (inputType) {
 						case StackType.I4:
@@ -303,7 +306,7 @@ namespace ICSharpCode.Decompiler.IL
 
 		public override void WriteTo(ITextOutput output, ILAstWritingOptions options)
 		{
-			ILRange.WriteTo(output, options);
+			WriteILRange(output, options);
 			output.Write(OpCode);
 			if (CheckForOverflow) {
 				output.Write(".ovf");

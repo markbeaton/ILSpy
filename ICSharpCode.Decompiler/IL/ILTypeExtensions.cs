@@ -16,49 +16,41 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-using Mono.Cecil;
 using ICSharpCode.Decompiler.TypeSystem;
+using System.Reflection.Metadata;
 
 namespace ICSharpCode.Decompiler.IL
 {
 	static class ILTypeExtensions
 	{
-		public static StackType GetStackType(this MetadataType typeCode)
+		public static StackType GetStackType(this PrimitiveType primitiveType)
 		{
-			switch (typeCode) {
-				case MetadataType.Boolean:
-				case MetadataType.Char:
-				case MetadataType.SByte:
-				case MetadataType.Byte:
-				case MetadataType.Int16:
-				case MetadataType.UInt16:
-				case MetadataType.Int32:
-				case MetadataType.UInt32:
+			switch (primitiveType) {
+				case PrimitiveType.I1:
+				case PrimitiveType.U1:
+				case PrimitiveType.I2:
+				case PrimitiveType.U2:
+				case PrimitiveType.I4:
+				case PrimitiveType.U4:
 					return StackType.I4;
-				case MetadataType.Int64:
-				case MetadataType.UInt64:
+				case PrimitiveType.I8:
+				case PrimitiveType.U8:
 					return StackType.I8;
-				case MetadataType.IntPtr:
-				case MetadataType.UIntPtr:
-				case MetadataType.Pointer:
-				case MetadataType.FunctionPointer:
+				case PrimitiveType.I:
+				case PrimitiveType.U:
 					return StackType.I;
-				case MetadataType.Single:
+				case PrimitiveType.R4:
 					return StackType.F4;
-				case MetadataType.Double:
+				case PrimitiveType.R8:
+				case PrimitiveType.R:
 					return StackType.F8;
-				case MetadataType.ByReference:
+				case PrimitiveType.Ref: // ByRef
 					return StackType.Ref;
-				case MetadataType.Void:
-					return StackType.Void;
+				case PrimitiveType.Unknown:
+					return StackType.Unknown;
 				default:
 					return StackType.O;
 			}
-		}
-
-		public static StackType GetStackType(this PrimitiveType primitiveType)
-		{
-			return ((MetadataType)primitiveType).GetStackType();
 		}
 		
 		public static Sign GetSign(this PrimitiveType primitiveType)
@@ -70,6 +62,7 @@ namespace ICSharpCode.Decompiler.IL
 				case PrimitiveType.I8:
 				case PrimitiveType.R4:
 				case PrimitiveType.R8:
+				case PrimitiveType.R:
 				case PrimitiveType.I:
 					return Sign.Signed;
 				case PrimitiveType.U1:
@@ -105,6 +98,7 @@ namespace ICSharpCode.Decompiler.IL
 				case PrimitiveType.I8:
 				case PrimitiveType.R8:
 				case PrimitiveType.U8:
+				case PrimitiveType.R:
 					return 8;
 				case PrimitiveType.I:
 				case PrimitiveType.U:
@@ -131,22 +125,41 @@ namespace ICSharpCode.Decompiler.IL
 			return primitiveType.GetStackType().IsIntegerType();
 		}
 
+		public static bool IsFloatType(this PrimitiveType type)
+		{
+			switch (type) {
+				case PrimitiveType.R4:
+				case PrimitiveType.R8:
+				case PrimitiveType.R:
+					return true;
+				default:
+					return false;
+			}
+		}
+
 		/// <summary>
 		/// Infers the C# type for an IL instruction.
 		/// 
 		/// Returns SpecialType.UnknownType for unsupported instructions.
 		/// </summary>
-		public static IType InferType(this ILInstruction inst)
+		public static IType InferType(this ILInstruction inst, ICompilation compilation)
 		{
 			switch (inst) {
 				case NewObj newObj:
 					return newObj.Method.DeclaringType;
+				case NewArr newArr:
+					if (compilation != null)
+						return new ArrayType(compilation, newArr.Type, newArr.Indices.Count);
+					else
+						return SpecialType.UnknownType;
 				case Call call:
 					return call.Method.ReturnType;
 				case CallVirt callVirt:
 					return callVirt.Method.ReturnType;
 				case CallIndirect calli:
 					return calli.ReturnType;
+				case UserDefinedLogicOperator logicOp:
+					return logicOp.Method.ReturnType;
 				case LdObj ldobj:
 					return ldobj.Type;
 				case StObj stobj:
@@ -156,11 +169,46 @@ namespace ICSharpCode.Decompiler.IL
 				case StLoc stloc:
 					return stloc.Variable.Type;
 				case LdLoca ldloca:
-					return new TypeSystem.ByReferenceType(ldloca.Variable.Type);
+					return new ByReferenceType(ldloca.Variable.Type);
 				case LdFlda ldflda:
-					return new TypeSystem.ByReferenceType(ldflda.Field.Type);
+					return new ByReferenceType(ldflda.Field.Type);
 				case LdsFlda ldsflda:
-					return new TypeSystem.ByReferenceType(ldsflda.Field.Type);
+					return new ByReferenceType(ldsflda.Field.Type);
+				case LdElema ldelema:
+					if (ldelema.Array.InferType(compilation) is ArrayType arrayType) {
+						if (TypeUtils.IsCompatibleTypeForMemoryAccess(arrayType.ElementType, ldelema.Type)) {
+							return new ByReferenceType(arrayType.ElementType);
+						}
+					}
+					return new ByReferenceType(ldelema.Type);
+				case Comp comp:
+					if (compilation == null)
+						return SpecialType.UnknownType;
+					switch (comp.LiftingKind) {
+						case ComparisonLiftingKind.None:
+						case ComparisonLiftingKind.CSharp:
+							return compilation.FindType(KnownTypeCode.Boolean);
+						case ComparisonLiftingKind.ThreeValuedLogic:
+							return NullableType.Create(compilation, compilation.FindType(KnownTypeCode.Boolean));
+						default:
+							return SpecialType.UnknownType;
+					}
+				case BinaryNumericInstruction bni:
+					if (bni.IsLifted)
+						return SpecialType.UnknownType;
+					switch (bni.Operator) {
+						case BinaryNumericOperator.BitAnd:
+						case BinaryNumericOperator.BitOr:
+						case BinaryNumericOperator.BitXor:
+							var left = bni.Left.InferType(compilation);
+							var right = bni.Right.InferType(compilation);
+							if (left.Equals(right) && (left.IsCSharpPrimitiveIntegerType() || left.IsKnownType(KnownTypeCode.Boolean)))
+								return left;
+							else
+								return SpecialType.UnknownType;
+						default:
+							return SpecialType.UnknownType;
+					}
 				default:
 					return SpecialType.UnknownType;
 			}

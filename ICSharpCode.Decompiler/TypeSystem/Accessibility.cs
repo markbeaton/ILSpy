@@ -16,6 +16,9 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+using System.Diagnostics;
+using ICSharpCode.Decompiler.Util;
+
 namespace ICSharpCode.Decompiler.TypeSystem
 {
 	/// <summary>
@@ -23,8 +26,8 @@ namespace ICSharpCode.Decompiler.TypeSystem
 	/// </summary>
 	public enum Accessibility : byte
 	{
-		// note: some code depends on the fact that these values are within the range 0-7
-		
+		// Note: some code depends on the fact that these values are within the range 0-7
+
 		/// <summary>
 		/// The entity is completely inaccessible. This is used for C# explicit interface implementations.
 		/// </summary>
@@ -34,82 +37,83 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		/// </summary>
 		Private,
 		/// <summary>
-		/// The entity is accessible everywhere.
+		/// The entity is accessible in derived classes within the same assembly.
+		/// This corresponds to C# <c>private protected</c>.
 		/// </summary>
-		Public,
+		ProtectedAndInternal,
 		/// <summary>
 		/// The entity is only accessible within the same class and in derived classes.
 		/// </summary>
 		Protected,
 		/// <summary>
-		/// The entity is accessible within the same project content.
+		/// The entity is accessible within the same assembly.
 		/// </summary>
 		Internal,
 		/// <summary>
-		/// The entity is accessible both everywhere in the project content, and in all derived classes.
+		/// The entity is accessible both everywhere in the assembly, and in all derived classes.
+		/// This corresponds to C# <c>protected internal</c>.
 		/// </summary>
-		/// <remarks>This corresponds to C# 'protected internal'.</remarks>
 		ProtectedOrInternal,
 		/// <summary>
-		/// The entity is accessible in derived classes within the same project content.
+		/// The entity is accessible everywhere.
 		/// </summary>
-		/// <remarks>C# does not support this accessibility.</remarks>
-		ProtectedAndInternal,
+		Public,
 	}
-	
-	public interface IHasAccessibility
+
+	public static class AccessibilityExtensions
 	{
+		// This code depends on the fact that the enum values are sorted similar to the partial order
+		// where an accessibility is smaller than another if it makes an entity visibible to a subset of the code:
+		// digraph Accessibilities {
+		//   none -> private -> protected_and_internal -> protected -> protected_or_internal -> public;
+		//   none -> private -> protected_and_internal -> internal  -> protected_or_internal -> public;
+		// }
+
 		/// <summary>
-		/// Gets the accessibility of this entity.
+		/// Gets whether a &lt;= b in the partial order of accessibilities:
+		/// return true if b is accessible everywhere where a is accessible.
 		/// </summary>
-		Accessibility Accessibility { get; }
-		
+		public static bool LessThanOrEqual(this Accessibility a, Accessibility b)
+		{
+			// Exploit the enum order being similar to the partial order to dramatically simplify the logic here:
+			// protected vs. internal is the only pair for which the enum value order doesn't match the partial order
+			return a <= b && !(a == Accessibility.Protected && b == Accessibility.Internal);
+		}
+
 		/// <summary>
-		/// Gets a value indicating whether this instance is private.
+		/// Computes the intersection of the two accessibilities:
+		/// The result is accessible from any given point in the code
+		/// iff both a and b are accessible from that point.
 		/// </summary>
-		/// <value>
-		/// <c>true</c> if this instance is private; otherwise, <c>false</c>.
-		/// </value>
-		bool IsPrivate { get; }
-		
+		public static Accessibility Intersect(this Accessibility a, Accessibility b)
+		{
+			if (a > b) {
+				ExtensionMethods.Swap(ref a, ref b);
+			}
+			if (a == Accessibility.Protected && b == Accessibility.Internal) {
+				return Accessibility.ProtectedAndInternal;
+			} else {
+				Debug.Assert(!(a == Accessibility.Internal && b == Accessibility.Protected));
+				return a;
+			}
+		}
+
 		/// <summary>
-		/// Gets a value indicating whether this instance is public.
+		/// Computes the union of the two accessibilities:
+		/// The result is accessible from any given point in the code
+		/// iff at least one of a or b is accessible from that point.
 		/// </summary>
-		/// <value>
-		/// <c>true</c> if this instance is public; otherwise, <c>false</c>.
-		/// </value>
-		bool IsPublic { get; }
-		
-		/// <summary>
-		/// Gets a value indicating whether this instance is protected.
-		/// </summary>
-		/// <value>
-		/// <c>true</c> if this instance is protected; otherwise, <c>false</c>.
-		/// </value>
-		bool IsProtected { get; }
-		
-		/// <summary>
-		/// Gets a value indicating whether this instance is internal.
-		/// </summary>
-		/// <value>
-		/// <c>true</c> if this instance is internal; otherwise, <c>false</c>.
-		/// </value>
-		bool IsInternal { get; }
-		
-		/// <summary>
-		/// Gets a value indicating whether this instance is protected or internal.
-		/// </summary>
-		/// <value>
-		/// <c>true</c> if this instance is protected or internal; otherwise, <c>false</c>.
-		/// </value>
-		bool IsProtectedOrInternal { get; }
-		
-		/// <summary>
-		/// Gets a value indicating whether this instance is protected and internal.
-		/// </summary>
-		/// <value>
-		/// <c>true</c> if this instance is protected and internal; otherwise, <c>false</c>.
-		/// </value>
-		bool IsProtectedAndInternal { get; }
+		public static Accessibility Union(this Accessibility a, Accessibility b)
+		{
+			if (a > b) {
+				ExtensionMethods.Swap(ref a, ref b);
+			}
+			if (a == Accessibility.Protected && b == Accessibility.Internal) {
+				return Accessibility.ProtectedOrInternal;
+			} else {
+				Debug.Assert(!(a == Accessibility.Internal && b == Accessibility.Protected));
+				return b;
+			}
+		}
 	}
 }

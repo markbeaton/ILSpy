@@ -40,7 +40,9 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		public override bool? IsReferenceType {
 			get { return null; }
 		}
-		
+
+		public override bool IsByRefLike => true;
+
 		public override int GetHashCode()
 		{
 			return elementType.GetHashCode() ^ 91725813;
@@ -65,11 +67,6 @@ namespace ICSharpCode.Decompiler.TypeSystem
 			else
 				return new ByReferenceType(e);
 		}
-		
-		public override ITypeReference ToTypeReference()
-		{
-			return new ByReferenceTypeReference(elementType.ToTypeReference());
-		}
 	}
 	
 	[Serializable]
@@ -80,7 +77,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		public ByReferenceTypeReference(ITypeReference elementType)
 		{
 			if (elementType == null)
-				throw new ArgumentNullException("elementType");
+				throw new ArgumentNullException(nameof(elementType));
 			this.elementType = elementType;
 		}
 		

@@ -22,6 +22,7 @@ extends [mscorlib]System.Object
 
     call void Program::InlineAssignByte()
     call void Program::Int32OrNativeTests()
+    call void Program::ByRefInstanceCallWithTypeMismatchTests()
 
     ret
   } // end of method Main
@@ -256,11 +257,70 @@ pointless:
     ret
   }
 
+  .method public static void RefOrNull(uint8& r, bool use_null)
+  {
+    // Not quite valid IL due to ref<->I mismatch.
+    // https://github.com/icsharpcode/ILSpy/issues/981
+    ldarg.1
+    brtrue push_null
+    ldarg.0
+    br done
+  push_null:
+    ldc.i4.0
+    conv.u
+  done:
+    call void Program::UseRef(uint8&)
+    ret
+  }
+
+  .method public static void UseRef(uint8& r)
+  {
+    ret
+  }
+
   .method public static void Print(native int val)
   {
     ldarg.0
     box native int
     call void [mscorlib]System.Console::WriteLine(object)
+    ret
+  }
+
+  .method public static void ByRefInstanceCallWithTypeMismatchTests()
+  {
+    ldstr "ByRefInstanceCallWithTypeMismatch(0) = {0}"
+    ldc.i4.0
+    call string Program::ByRefInstanceCallWithTypeMismatch(int32)
+    call void [mscorlib]System.Console::WriteLine(string, object)
+
+    ldstr "ByRefInstanceCallWithTypeMismatch(1) = {0}"
+    ldc.i4.1
+    call string Program::ByRefInstanceCallWithTypeMismatch(int32)
+    call void [mscorlib]System.Console::WriteLine(string, object)
+
+    ldstr "Issue1333() = {0}"
+    call string Program::Issue1333()
+    call void [mscorlib]System.Console::WriteLine(string, object)
+
+    ret
+  }
+  
+  .method public hidebysig static string ByRefInstanceCallWithTypeMismatch(int32 val) cil managed
+  {
+    ldarga val
+    constrained. [mscorlib]System.Boolean
+    callvirt instance string [mscorlib]System.Object::ToString()
+    ret
+  }
+  
+  .method public hidebysig static string Issue1333() cil managed
+  {
+    .locals (bool)
+    ldc.i4.0
+    stloc.0
+    ldloca.s 0
+    constrained. [mscorlib]System.Boolean
+    callvirt instance string [mscorlib]System.Object::ToString()
     ret
   }
 }

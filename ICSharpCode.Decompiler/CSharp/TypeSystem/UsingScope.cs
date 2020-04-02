@@ -33,7 +33,6 @@ namespace ICSharpCode.Decompiler.CSharp.TypeSystem
 	public class UsingScope : AbstractFreezable
 	{
 		readonly UsingScope parent;
-		DomRegion region;
 		string shortName = "";
 		IList<TypeOrNamespaceReference> usings;
 		IList<KeyValuePair<string, TypeOrNamespaceReference>> usingAliases;
@@ -68,23 +67,15 @@ namespace ICSharpCode.Decompiler.CSharp.TypeSystem
 		public UsingScope(UsingScope parent, string shortName)
 		{
 			if (parent == null)
-				throw new ArgumentNullException("parent");
+				throw new ArgumentNullException(nameof(parent));
 			if (shortName == null)
-				throw new ArgumentNullException("shortName");
+				throw new ArgumentNullException(nameof(shortName));
 			this.parent = parent;
 			this.shortName = shortName;
 		}
 		
 		public UsingScope Parent {
 			get { return parent; }
-		}
-		
-		public DomRegion Region {
-			get { return region; }
-			set {
-				FreezableHelper.ThrowIfFrozen(this);
-				region = value;
-			}
 		}
 		
 		public string ShortNamespaceName {
@@ -163,7 +154,7 @@ namespace ICSharpCode.Decompiler.CSharp.TypeSystem
 			CacheManager cache = compilation.CacheManager;
 			ResolvedUsingScope resolved = cache.GetShared(this) as ResolvedUsingScope;
 			if (resolved == null) {
-				var csContext = new CSharpTypeResolveContext(compilation.MainAssembly, parent != null ? parent.Resolve(compilation) : null);
+				var csContext = new CSharpTypeResolveContext(compilation.MainModule, parent != null ? parent.Resolve(compilation) : null);
 				resolved = (ResolvedUsingScope)cache.GetOrAddShared(this, new ResolvedUsingScope(csContext, this));
 			}
 			return resolved;

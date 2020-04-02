@@ -18,19 +18,20 @@
 
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.Composition.Hosting;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Navigation;
 using System.Windows.Threading;
 
-using ICSharpCode.ILSpy.TextView;
 using ICSharpCode.ILSpy.Options;
+
+using Microsoft.VisualStudio.Composition;
 
 namespace ICSharpCode.ILSpy
 {
@@ -39,15 +40,18 @@ namespace ICSharpCode.ILSpy
 	/// </summary>
 	public partial class App : Application
 	{
-		static CompositionContainer compositionContainer;
-		
-		public static CompositionContainer CompositionContainer {
-			get { return compositionContainer; }
-		}
 		
 		internal static CommandLineArguments CommandLineArguments;
+
+		static ExportProvider exportProvider;
 		
-		internal static IList<ExceptionData> StartupExceptions = new List<ExceptionData>();
+		public static ExportProvider ExportProvider => exportProvider;
+
+		static IExportProviderFactory exportProviderFactory;
+		
+		public static IExportProviderFactory ExportProviderFactory => exportProviderFactory;
+		
+		internal static readonly IList<ExceptionData> StartupExceptions = new List<ExceptionData>();
 		
 		internal class ExceptionData
 		{
@@ -67,40 +71,70 @@ namespace ICSharpCode.ILSpy
 				}
 			}
 			InitializeComponent();
-			
-			var catalog = new AggregateCatalog();
-			catalog.Catalogs.Add(new AssemblyCatalog(typeof(App).Assembly));
-			// Don't use DirectoryCatalog, that causes problems if the plugins are from the Internet zone
-			// see http://stackoverflow.com/questions/8063841/mef-loading-plugins-from-a-network-shared-folder
-			string appPath = Path.GetDirectoryName(typeof(App).Module.FullyQualifiedName);
-			foreach (string plugin in Directory.GetFiles(appPath, "*.Plugin.dll")) {
-				string shortName = Path.GetFileNameWithoutExtension(plugin);
-				try {
-					var asm = Assembly.Load(shortName);
-					asm.GetTypes();
-					catalog.Catalogs.Add(new AssemblyCatalog(asm));
-				} catch (Exception ex) {
-					// Cannot show MessageBox here, because WPF would crash with a XamlParseException
-					// Remember and show exceptions in text output, once MainWindow is properly initialized
-					StartupExceptions.Add(new ExceptionData { Exception = ex, PluginName = shortName });
-				}
-			}
-			
-			compositionContainer = new CompositionContainer(catalog);
-			
+
 			if (!System.Diagnostics.Debugger.IsAttached) {
 				AppDomain.CurrentDomain.UnhandledException += ShowErrorBox;
 				Dispatcher.CurrentDispatcher.UnhandledException += Dispatcher_UnhandledException;
 			}
 			TaskScheduler.UnobservedTaskException += DotNet40_UnobservedTaskException;
-			Languages.Initialize(compositionContainer);
+
+			// Cannot show MessageBox here, because WPF would crash with a XamlParseException
+			// Remember and show exceptions in text output, once MainWindow is properly initialized
+			try {
+				// Set up VS MEF. For now, only do MEF1 part discovery, since that was in use before.
+				// To support both MEF1 and MEF2 parts, just change this to:
+				// var discovery = PartDiscovery.Combine(new AttributedPartDiscoveryV1(Resolver.DefaultInstance),
+				//                                       new AttributedPartDiscovery(Resolver.DefaultInstance));
+				var discovery = new AttributedPartDiscoveryV1(Resolver.DefaultInstance);
+				var catalog = ComposableCatalog.Create(Resolver.DefaultInstance);
+				var pluginDir = Path.GetDirectoryName(typeof(App).Module.FullyQualifiedName);
+				if (pluginDir != null) {
+					foreach (var plugin in Directory.GetFiles(pluginDir, "*.Plugin.dll")) {
+						var name = Path.GetFileNameWithoutExtension(plugin);
+						try {
+							var asm = Assembly.Load(name);
+							var parts = discovery.CreatePartsAsync(asm).GetAwaiter().GetResult();
+							catalog = catalog.AddParts(parts);
+						} catch (Exception ex) {
+							StartupExceptions.Add(new ExceptionData { Exception = ex, PluginName = name });
+						}
+					}
+				}
+				// Add the built-in parts
+				catalog = catalog.AddParts(discovery.CreatePartsAsync(Assembly.GetExecutingAssembly()).GetAwaiter().GetResult());
+				// If/When the project switches to .NET Standard/Core, this will be needed to allow metadata interfaces (as opposed
+				// to metadata classes). When running on .NET Framework, it's automatic.
+				//   catalog.WithDesktopSupport();
+				// If/When any part needs to import ICompositionService, this will be needed:
+				//   catalog.WithCompositionService();
+				var config = CompositionConfiguration.Create(catalog);
+				exportProviderFactory = config.CreateExportProviderFactory();
+				exportProvider = exportProviderFactory.CreateExportProvider();
+				// This throws exceptions for composition failures. Alternatively, the configuration's CompositionErrors property
+				// could be used to log the errors directly. Used at the end so that it does not prevent the export provider setup.
+				config.ThrowOnErrors();
+			} catch (Exception ex) {
+				StartupExceptions.Add(new ExceptionData { Exception = ex });
+			}
+			
+			Languages.Initialize(exportProvider);
 
 			EventManager.RegisterClassHandler(typeof(Window),
 			                                  Hyperlink.RequestNavigateEvent,
 			                                  new RequestNavigateEventHandler(Window_RequestNavigate));
 			ILSpyTraceListener.Install();
 		}
-		
+
+		protected override void OnStartup(StartupEventArgs e)
+		{
+			var output = new StringBuilder();
+			if (ILSpy.MainWindow.FormatExceptions(StartupExceptions.ToArray(), output)) {
+				MessageBox.Show(output.ToString(), "Sorry we crashed!");
+				Environment.Exit(1);
+			}
+			base.OnStartup(e);
+		}
+
 		string FullyQualifyPath(string argument)
 		{
 			// Fully qualify the paths before passing them to another process,
@@ -198,19 +232,7 @@ namespace ICSharpCode.ILSpy
 		
 		void Window_RequestNavigate(object sender, RequestNavigateEventArgs e)
 		{
-			if (e.Uri.Scheme == "resource") {
-				AvalonEditTextOutput output = new AvalonEditTextOutput();
-				using (Stream s = typeof(App).Assembly.GetManifestResourceStream(typeof(App), e.Uri.AbsolutePath)) {
-					using (StreamReader r = new StreamReader(s)) {
-						string line;
-						while ((line = r.ReadLine()) != null) {
-							output.Write(line);
-							output.WriteLine();
-						}
-					}
-				}
-				ILSpy.MainWindow.Instance.TextView.ShowText(output);
-			}
+			ILSpy.MainWindow.Instance.NavigateTo(e);
 		}
 	}
 }

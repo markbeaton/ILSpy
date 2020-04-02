@@ -51,7 +51,7 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax.PatternMatching
 		public static Match Match(this INode pattern, INode other)
 		{
 			if (pattern == null)
-				throw new ArgumentNullException("pattern");
+				throw new ArgumentNullException(nameof(pattern));
 			Match match = PatternMatching.Match.CreateNew();
 			if (pattern.DoMatch(other, match))
 				return match;
@@ -62,8 +62,33 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax.PatternMatching
 		public static bool IsMatch(this INode pattern, INode other)
 		{
 			if (pattern == null)
-				throw new ArgumentNullException("pattern");
+				throw new ArgumentNullException(nameof(pattern));
 			return pattern.DoMatch(other, PatternMatching.Match.CreateNew());
+		}
+
+		public static AstType ToType(this Pattern pattern)
+		{
+			return pattern;
+		}
+
+		public static Expression ToExpression(this Pattern pattern)
+		{
+			return pattern;
+		}
+
+		public static Statement ToStatement(this Pattern pattern)
+		{
+			return pattern;
+		}
+
+		public static Expression WithName(this Expression node, string patternGroupName)
+		{
+			return new NamedNode(patternGroupName, node);
+		}
+
+		public static Statement WithName(this Statement node, string patternGroupName)
+		{
+			return new NamedNode(patternGroupName, node);
 		}
 	}
 }

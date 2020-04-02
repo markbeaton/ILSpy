@@ -37,7 +37,7 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 		public static bool IsInvocable(IMember member)
 		{
 			if (member == null)
-				throw new ArgumentNullException("member");
+				throw new ArgumentNullException(nameof(member));
 			// C# 4.0 spec, §7.4 member lookup
 			if (member is IEvent || member is IMethod)
 				return true;
@@ -47,13 +47,13 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 		#endregion
 		
 		readonly ITypeDefinition currentTypeDefinition;
-		readonly IAssembly currentAssembly;
+		readonly IModule currentModule;
 		readonly bool isInEnumMemberInitializer;
 		
-		public MemberLookup(ITypeDefinition currentTypeDefinition, IAssembly currentAssembly, bool isInEnumMemberInitializer = false)
+		public MemberLookup(ITypeDefinition currentTypeDefinition, IModule currentModule, bool isInEnumMemberInitializer = false)
 		{
 			this.currentTypeDefinition = currentTypeDefinition;
-			this.currentAssembly = currentAssembly;
+			this.currentModule = currentModule;
 			this.isInEnumMemberInitializer = isInEnumMemberInitializer;
 		}
 		
@@ -99,7 +99,7 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 		public bool IsAccessible(IEntity entity, bool allowProtectedAccess)
 		{
 			if (entity == null)
-				throw new ArgumentNullException("entity");
+				throw new ArgumentNullException(nameof(entity));
 			// C# 4.0 spec, §3.5.2 Accessiblity domains
 			switch (entity.Accessibility) {
 				case Accessibility.None:
@@ -116,19 +116,19 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 				case Accessibility.Protected:
 					return IsProtectedAccessible(allowProtectedAccess, entity);
 				case Accessibility.Internal:
-					return IsInternalAccessible(entity.ParentAssembly);
+					return IsInternalAccessible(entity.ParentModule);
 				case Accessibility.ProtectedOrInternal:
-					return IsInternalAccessible(entity.ParentAssembly) || IsProtectedAccessible(allowProtectedAccess, entity);
+					return IsInternalAccessible(entity.ParentModule) || IsProtectedAccessible(allowProtectedAccess, entity);
 				case Accessibility.ProtectedAndInternal:
-					return IsInternalAccessible(entity.ParentAssembly) && IsProtectedAccessible(allowProtectedAccess, entity);
+					return IsInternalAccessible(entity.ParentModule) && IsProtectedAccessible(allowProtectedAccess, entity);
 				default:
 					throw new Exception("Invalid value for Accessibility");
 			}
 		}
 		
-		bool IsInternalAccessible(IAssembly assembly)
+		bool IsInternalAccessible(IModule module)
 		{
-			return assembly != null && currentAssembly != null && assembly.InternalsVisibleTo(currentAssembly);
+			return module != null && currentModule != null && module.InternalsVisibleTo(currentModule);
 		}
 		
 		bool IsProtectedAccessible(bool allowProtectedAccess, IEntity entity)
@@ -159,7 +159,7 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 		public IEnumerable<IEntity> GetAccessibleMembers(ResolveResult targetResolveResult)
 		{
 			if (targetResolveResult == null)
-				throw new ArgumentNullException("targetResolveResult");
+				throw new ArgumentNullException(nameof(targetResolveResult));
 			
 			bool targetIsTypeParameter = targetResolveResult.Type.Kind == TypeKind.TypeParameter;
 			bool allowProtectedAccess = IsProtectedAccessAllowed(targetResolveResult);
@@ -273,14 +273,14 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 		#endregion
 		
 		#region LookupType
-		public ResolveResult LookupType(IType declaringType, string name, IList<IType> typeArguments, bool parameterizeResultType = true)
+		public ResolveResult LookupType(IType declaringType, string name, IReadOnlyList<IType> typeArguments, bool parameterizeResultType = true)
 		{
 			if (declaringType == null)
-				throw new ArgumentNullException("declaringType");
+				throw new ArgumentNullException(nameof(declaringType));
 			if (name == null)
-				throw new ArgumentNullException("name");
+				throw new ArgumentNullException(nameof(name));
 			if (typeArguments == null)
-				throw new ArgumentNullException("typeArguments");
+				throw new ArgumentNullException(nameof(typeArguments));
 			
 			int typeArgumentCount = typeArguments.Count;
 			Predicate<ITypeDefinition> filter = delegate (ITypeDefinition d) {
@@ -332,14 +332,14 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 		/// <summary>
 		/// Performs a member lookup.
 		/// </summary>
-		public ResolveResult Lookup(ResolveResult targetResolveResult, string name, IList<IType> typeArguments, bool isInvocation)
+		public ResolveResult Lookup(ResolveResult targetResolveResult, string name, IReadOnlyList<IType> typeArguments, bool isInvocation)
 		{
 			if (targetResolveResult == null)
-				throw new ArgumentNullException("targetResolveResult");
+				throw new ArgumentNullException(nameof(targetResolveResult));
 			if (name == null)
-				throw new ArgumentNullException("name");
+				throw new ArgumentNullException(nameof(name));
 			if (typeArguments == null)
-				throw new ArgumentNullException("typeArguments");
+				throw new ArgumentNullException(nameof(typeArguments));
 			
 			bool targetIsTypeParameter = targetResolveResult.Type.Kind == TypeKind.TypeParameter;
 			
@@ -347,7 +347,7 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 			Predicate<ITypeDefinition> nestedTypeFilter = delegate(ITypeDefinition entity) {
 				return entity.Name == name && IsAccessible(entity, allowProtectedAccess);
 			};
-			Predicate<IUnresolvedMember> memberFilter = delegate(IUnresolvedMember entity) {
+			Predicate<IMember> memberFilter = delegate(IMember entity) {
 				// NOTE: Atm destructors can be looked up with 'Finalize'
 				return entity.SymbolKind != SymbolKind.Indexer &&
 				       entity.SymbolKind != SymbolKind.Operator && 
@@ -410,14 +410,14 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 		/// <summary>
 		/// Looks up the indexers on the target type.
 		/// </summary>
-		public IList<MethodListWithDeclaringType> LookupIndexers(ResolveResult targetResolveResult)
+		public IReadOnlyList<MethodListWithDeclaringType> LookupIndexers(ResolveResult targetResolveResult)
 		{
 			if (targetResolveResult == null)
-				throw new ArgumentNullException("targetResolveResult");
+				throw new ArgumentNullException(nameof(targetResolveResult));
 			
 			IType targetType = targetResolveResult.Type;
 			bool allowProtectedAccess = IsProtectedAccessAllowed(targetResolveResult);
-			Predicate<IUnresolvedProperty> filter = p => p.IsIndexer;
+			Predicate<IProperty> filter = p => p.IsIndexer && !p.IsExplicitInterfaceImplementation;
 			
 			List<LookupGroup> lookupGroups = new List<LookupGroup>();
 			foreach (IType type in targetType.GetNonInterfaceBaseTypes()) {
@@ -532,7 +532,7 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 						
 						var lookupGroup = lookupGroups[i];
 						if (typeBaseTypes.Contains(lookupGroup.DeclaringType)) {
-							if (method != null) {
+							if (method != null && !lookupGroup.MethodsAreHidden) {
 								// Find the matching method, and replace it with the override
 								for (int j = 0; j < lookupGroup.Methods.Count; j++) {
 									if (SignatureComparer.Ordinal.Equals(method, lookupGroup.Methods[j])) {
@@ -634,7 +634,7 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 		#endregion
 		
 		#region CreateResult
-		ResolveResult CreateResult(ResolveResult targetResolveResult, List<LookupGroup> lookupGroups, string name, IList<IType> typeArguments)
+		ResolveResult CreateResult(ResolveResult targetResolveResult, List<LookupGroup> lookupGroups, string name, IReadOnlyList<IType> typeArguments)
 		{
 			// Remove all hidden groups
 			lookupGroups.RemoveAll(g => g.AllHidden);
@@ -684,7 +684,7 @@ namespace ICSharpCode.Decompiler.CSharp.Resolver
 						return new MemberResolveResult(
 							targetResolveResult, field,
 							field.DeclaringTypeDefinition.EnumUnderlyingType,
-							field.IsConst, field.ConstantValue);
+							field.IsConst, field.GetConstantValue());
 					}
 				}
 				return new MemberResolveResult(targetResolveResult, resultGroup.NonMethod);

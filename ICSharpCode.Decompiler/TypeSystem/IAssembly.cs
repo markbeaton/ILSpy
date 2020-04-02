@@ -17,14 +17,46 @@
 // DEALINGS IN THE SOFTWARE.
 
 using System.Collections.Generic;
+using ICSharpCode.Decompiler.Metadata;
 
 namespace ICSharpCode.Decompiler.TypeSystem
 {
 	/// <summary>
-	/// Represents an unresolved assembly.
+	/// Interface used to help with construction of the type system.
 	/// </summary>
-	public interface IUnresolvedAssembly : IAssemblyReference
+	/// <remarks>
+	/// The type system is an immutable cyclic data structure:
+	/// the compilation (ICompilation) has references to all modules,
+	/// and each module has a reference back to the compilation.
+	/// 
+	/// Module references are used to solve this cyclic dependency:
+	/// The compilation constructor accepts module references,
+	/// and only the IModuleReference.Resolve() function can observe a
+	/// partially-constructed compilation; but not any user code.
+	/// </remarks>
+	public interface IModuleReference
 	{
+		/// <summary>
+		/// Resolves this metadata module.
+		/// </summary>
+		IModule Resolve(ITypeResolveContext context);
+	}
+	
+	/// <summary>
+	/// Represents a metadata module.
+	/// </summary>
+	public interface IModule : ISymbol, ICompilationProvider
+	{
+		/// <summary>
+		/// Gets the underlying metadata file. May return null, if the IAssembly was not created from a PE file.
+		/// </summary>
+		PEFile PEFile { get; }
+
+		/// <summary>
+		/// Gets whether this assembly is the main assembly of the compilation.
+		/// </summary>
+		bool IsMainModule { get; }
+		
 		/// <summary>
 		/// Gets the assembly name (short name).
 		/// </summary>
@@ -34,82 +66,29 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		/// Gets the full assembly name (including public key token etc.)
 		/// </summary>
 		string FullAssemblyName { get; }
-		
-		/// <summary>
-		/// Gets the path to the assembly location. 
-		/// For projects it is the same as the output path.
-		/// </summary>
-		string Location { get; }
 
 		/// <summary>
 		/// Gets the list of all assembly attributes in the project.
 		/// </summary>
-		IEnumerable<IUnresolvedAttribute> AssemblyAttributes { get; }
-		
+		IEnumerable<IAttribute> GetAssemblyAttributes();
+
 		/// <summary>
 		/// Gets the list of all module attributes in the project.
 		/// </summary>
-		IEnumerable<IUnresolvedAttribute> ModuleAttributes { get; }
-		
-		/// <summary>
-		/// Gets all non-nested types in the assembly.
-		/// </summary>
-		IEnumerable<IUnresolvedTypeDefinition> TopLevelTypeDefinitions { get; }
-	}
-	
-	public interface IAssemblyReference
-	{
-		/// <summary>
-		/// Resolves this assembly.
-		/// </summary>
-		IAssembly Resolve(ITypeResolveContext context);
-	}
-	
-	/// <summary>
-	/// Represents an assembly.
-	/// </summary>
-	public interface IAssembly : ICompilationProvider
-	{
-		/// <summary>
-		/// Gets the original unresolved assembly.
-		/// </summary>
-		IUnresolvedAssembly UnresolvedAssembly { get; }
-		
-		/// <summary>
-		/// Gets whether this assembly is the main assembly of the compilation.
-		/// </summary>
-		bool IsMainAssembly { get; }
-		
-		/// <summary>
-		/// Gets the assembly name (short name).
-		/// </summary>
-		string AssemblyName { get; }
-		
-		/// <summary>
-		/// Gets the full assembly name (including public key token etc.)
-		/// </summary>
-		string FullAssemblyName { get; }
-		
-		/// <summary>
-		/// Gets the list of all assembly attributes in the project.
-		/// </summary>
-		IList<IAttribute> AssemblyAttributes { get; }
-		
-		/// <summary>
-		/// Gets the list of all module attributes in the project.
-		/// </summary>
-		IList<IAttribute> ModuleAttributes { get; }
+		IEnumerable<IAttribute> GetModuleAttributes();
 		
 		/// <summary>
 		/// Gets whether the internals of this assembly are visible in the specified assembly.
 		/// </summary>
-		bool InternalsVisibleTo(IAssembly assembly);
+		bool InternalsVisibleTo(IModule module);
 		
 		/// <summary>
-		/// Gets the root namespace for this assembly.
+		/// Gets the root namespace for this module.
 		/// </summary>
 		/// <remarks>
 		/// This always is the namespace without a name - it's unrelated to the 'root namespace' project setting.
+		/// It contains only subnamespaces and types defined in this module -- use ICompilation.RootNamespace
+		/// to get the combined view of all referenced assemblies.
 		/// </remarks>
 		INamespace RootNamespace { get; }
 		
@@ -123,5 +102,10 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		/// Gets all non-nested types in the assembly.
 		/// </summary>
 		IEnumerable<ITypeDefinition> TopLevelTypeDefinitions { get; }
+
+		/// <summary>
+		/// Gets all types in the assembly, including nested types.
+		/// </summary>
+		IEnumerable<ITypeDefinition> TypeDefinitions { get; }
 	}
 }

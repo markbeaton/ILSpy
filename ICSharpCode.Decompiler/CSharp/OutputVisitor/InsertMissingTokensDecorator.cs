@@ -37,36 +37,49 @@ namespace ICSharpCode.Decompiler.CSharp.OutputVisitor
 		
 		public override void StartNode(AstNode node)
 		{
-			currentList.Add(node);
-			nodes.Push(currentList);
-			currentList = new List<AstNode>();
+			// ignore whitespace: these don't need to be processed.
+			// StartNode/EndNode is only called for them to support folding of comments.
+			if (node.NodeType != NodeType.Whitespace) {
+				currentList.Add(node);
+				nodes.Push(currentList);
+				currentList = new List<AstNode>();
+			}
 			base.StartNode(node);
 		}
 		
 		public override void EndNode(AstNode node)
 		{
-			System.Diagnostics.Debug.Assert(currentList != null);
-			foreach (var removable in node.Children.Where(n => n is CSharpTokenNode)) {
-				removable.Remove();
+			// ignore whitespace: these don't need to be processed.
+			// StartNode/EndNode is only called for them to support folding of comments.
+			if (node.NodeType != NodeType.Whitespace) {
+				System.Diagnostics.Debug.Assert(currentList != null);
+				foreach (var removable in node.Children.Where(n => n is CSharpTokenNode)) {
+					removable.Remove();
+				}
+				foreach (var child in currentList) {
+					System.Diagnostics.Debug.Assert(child.Parent == null || node == child.Parent);
+					child.Remove();
+					node.AddChildWithExistingRole(child);
+				}
+				currentList = nodes.Pop();
 			}
-			foreach (var child in currentList) {
-				System.Diagnostics.Debug.Assert(child.Parent == null || node == child.Parent);
-				child.Remove();
-				node.AddChildWithExistingRole(child);
-			}
-			currentList = nodes.Pop();
 			base.EndNode(node);
 		}
 		
 		public override void WriteToken(Role role, string token)
 		{
-			CSharpTokenNode t = new CSharpTokenNode(locationProvider.Location, (TokenRole)role);
-			t.Role = role;
-			EmptyStatement node = nodes.Peek().LastOrDefault() as EmptyStatement;
-			if (node == null)
-				currentList.Add(t);
-			else {
-				node.Location = locationProvider.Location;
+			switch (nodes.Peek().LastOrDefault()) {
+				case EmptyStatement emptyStatement:
+					emptyStatement.Location = locationProvider.Location;
+					break;
+				case ErrorExpression errorExpression:
+					errorExpression.Location = locationProvider.Location;
+					break;
+				default:
+					CSharpTokenNode t = new CSharpTokenNode(locationProvider.Location, (TokenRole)role);
+					t.Role = role;
+					currentList.Add(t);
+					break;
 			}
 			base.WriteToken(role, token);
 		}
@@ -103,11 +116,11 @@ namespace ICSharpCode.Decompiler.CSharp.OutputVisitor
 			base.WriteIdentifier(identifier);
 		}
 		
-		public override void WritePrimitiveValue(object value, string literalValue = null)
+		public override void WritePrimitiveValue(object value, LiteralFormat format = LiteralFormat.None)
 		{
 			Expression node = nodes.Peek().LastOrDefault() as Expression;
 			var startLocation = locationProvider.Location;
-			base.WritePrimitiveValue(value, literalValue);
+			base.WritePrimitiveValue(value, format);
 			if (node is PrimitiveExpression) {
 				((PrimitiveExpression)node).SetLocation(startLocation, locationProvider.Location);
 			}
@@ -115,7 +128,7 @@ namespace ICSharpCode.Decompiler.CSharp.OutputVisitor
 				((NullReferenceExpression)node).SetStartLocation(startLocation);
 			}
 		}
-		
+
 		public override void WritePrimitiveType(string type)
 		{
 			PrimitiveType node = nodes.Peek().LastOrDefault() as PrimitiveType;

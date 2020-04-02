@@ -16,6 +16,7 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -84,31 +85,44 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 			/// Integer value that can be used to compare to VariableToDeclare instances
 			/// to determine which variable was used first in the source code.
 			/// 
-			/// Assuming both insertion points are on the same level, the variable
-			/// with the lower SourceOrder value has the insertion point that comes
-			/// first in the source code.
+			/// The variable with the lower SourceOrder value has the insertion point
+			/// that comes first in the source code.
 			/// </summary>
 			public int SourceOrder;
 			
+			/// <summary>
+			/// The insertion point, i.e. the node before which the variable declaration should be inserted.
+			/// </summary>
 			public InsertionPoint InsertionPoint;
 
+			/// <summary>
+			/// The first use of the variable.
+			/// </summary>
+			public IdentifierExpression FirstUse;
+
 			public VariableToDeclare ReplacementDueToCollision;
+			public bool InvolvedInCollision;
 			public bool RemovedDueToCollision => ReplacementDueToCollision != null;
 
-			public VariableToDeclare(ILVariable variable, bool defaultInitialization, InsertionPoint insertionPoint, int sourceOrder)
+			public VariableToDeclare(ILVariable variable, bool defaultInitialization, InsertionPoint insertionPoint, IdentifierExpression firstUse, int sourceOrder)
 			{
 				this.ILVariable = variable;
 				this.DefaultInitialization = defaultInitialization;
 				this.InsertionPoint = insertionPoint;
+				this.FirstUse = firstUse;
 				this.SourceOrder = sourceOrder;
 			}
 		}
 		
 		readonly Dictionary<ILVariable, VariableToDeclare> variableDict = new Dictionary<ILVariable, VariableToDeclare>();
-		
+		TransformContext context;
+
 		public void Run(AstNode rootNode, TransformContext context)
 		{
 			try {
+				if (this.context != null)
+					throw new InvalidOperationException("Reentrancy in DeclareVariables?");
+				this.context = context;
 				variableDict.Clear();
 				EnsureExpressionStatementsAreValid(rootNode);
 				FindInsertionPoints(rootNode, 0);
@@ -116,6 +130,7 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 				InsertVariableDeclarations(context);
 				UpdateAnnotations(rootNode);
 			} finally {
+				this.context = null;
 				variableDict.Clear();
 			}
 		}
@@ -144,6 +159,15 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 			return v.InsertionPoint.nextNode;
 		}
 
+		/// <summary>
+		/// Determines whether a variable was merged with other variables.
+		/// </summary>
+		public bool WasMerged(ILVariable variable)
+		{
+			VariableToDeclare v = variableDict[variable];
+			return v.InvolvedInCollision || v.RemovedDueToCollision;
+		}
+
 		public void ClearAnalysisResults()
 		{
 			variableDict.Clear();
@@ -156,16 +180,23 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 				if (!IsValidInStatementExpression(stmt.Expression)) {
 					// fetch ILFunction
 					var function = stmt.Ancestors.SelectMany(a => a.Annotations.OfType<ILFunction>()).First(f => f.Parent == null);
-					// assign result to dummy variable
-					var type = stmt.Expression.GetResolveResult().Type;
-					var v = function.RegisterVariable(
-						VariableKind.StackSlot,
-						type,
-						AssignVariableNames.GenerateVariableName(function, type, stmt.Expression.Annotations.OfType<ILInstruction>().Where(AssignVariableNames.IsSupportedInstruction).FirstOrDefault())
-					);
-					stmt.Expression = new AssignmentExpression(
-						new IdentifierExpression(v.Name).WithRR(new ILVariableResolveResult(v, v.Type)),
-						stmt.Expression.Detach());
+					// if possible use C# 7.0 discard-assignment
+					if (context.Settings.Discards && !ExpressionBuilder.HidesVariableWithName(function, "_")) {
+						stmt.Expression = new AssignmentExpression(
+							new IdentifierExpression("_"), // no ResolveResult
+							stmt.Expression.Detach());
+					} else {
+						// assign result to dummy variable
+						var type = stmt.Expression.GetResolveResult().Type;
+						var v = function.RegisterVariable(
+							VariableKind.StackSlot,
+							type,
+							AssignVariableNames.GenerateVariableName(function, type, stmt.Expression.Annotations.OfType<ILInstruction>().Where(AssignVariableNames.IsSupportedInstruction).FirstOrDefault())
+						);
+						stmt.Expression = new AssignmentExpression(
+							new IdentifierExpression(v.Name).WithRR(new ILVariableResolveResult(v, v.Type)),
+							stmt.Expression.Detach());
+					}
 				}
 			}
 		}
@@ -173,10 +204,10 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 		private static bool IsValidInStatementExpression(Expression expr)
 		{
 			switch (expr) {
-				case InvocationExpression ie:
-				case ObjectCreateExpression oce:
-				case AssignmentExpression ae:
-				case ErrorExpression ee:
+				case InvocationExpression _:
+				case ObjectCreateExpression _:
+				case AssignmentExpression _:
+				case ErrorExpression _:
 					return true;
 				case UnaryOperatorExpression uoe:
 					switch (uoe.Operator) {
@@ -186,6 +217,8 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 						case UnaryOperatorType.Decrement:
 						case UnaryOperatorType.Await:
 							return true;
+						case UnaryOperatorType.NullConditionalRewrap:
+							return IsValidInStatementExpression(uoe.Expression);
 						default:
 							return false;
 					}
@@ -233,13 +266,28 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 							newPoint = scopeTracking[startIndex + 1].InsertionPoint;
 						} else {
 							newPoint = new InsertionPoint { level = nodeLevel, nextNode = identExpr };
+							if (variable.HasInitialValue) {
+								// Uninitialized variables are logically initialized at the beginning of the function
+								// Because it's possible that the variable has a loop-carried dependency,
+								// declare it outside of any loops.
+								while (startIndex >= 0) {
+									if (scopeTracking[startIndex].Scope.EntryPoint.IncomingEdgeCount > 1) {
+										// declare variable outside of loop
+										newPoint = scopeTracking[startIndex].InsertionPoint;
+									} else if (scopeTracking[startIndex].Scope.Parent is ILFunction) {
+										// stop at beginning of function
+										break;
+									}
+									startIndex--;
+								}
+							}
 						}
 						VariableToDeclare v;
-						if (variableDict.TryGetValue(rr.Variable, out v)) {
+						if (variableDict.TryGetValue(variable, out v)) {
 							v.InsertionPoint = FindCommonParent(v.InsertionPoint, newPoint);
 						} else {
-							v = new VariableToDeclare(rr.Variable, rr.Variable.HasInitialValue,
-								newPoint, sourceOrder: variableDict.Count);
+							v = new VariableToDeclare(variable, variable.HasInitialValue,
+								newPoint, identExpr, sourceOrder: variableDict.Count);
 							variableDict.Add(rr.Variable, v);
 						}
 					}
@@ -250,12 +298,13 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 			}
 		}
 
-		bool VariableNeedsDeclaration(VariableKind kind)
+		internal static bool VariableNeedsDeclaration(VariableKind kind)
 		{
 			switch (kind) {
 				case VariableKind.PinnedLocal:
 				case VariableKind.Parameter:
-				case VariableKind.Exception:
+				case VariableKind.ExceptionLocal:
+				case VariableKind.ExceptionStackSlot:
 				case VariableKind.UsingLocal:
 				case VariableKind.ForeachLocal:
 					return false;
@@ -321,11 +370,17 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 				// guarantee that it finds only blocks.
 				// Fix that up now.
 				while (!(v.InsertionPoint.nextNode.Parent is BlockStatement)) {
-					if (v.InsertionPoint.nextNode.Parent is ForStatement f && v.InsertionPoint.nextNode == f.Initializers.FirstOrDefault() && IsMatchingAssignment(v, out _))
+					if (v.InsertionPoint.nextNode.Parent is ForStatement f && v.InsertionPoint.nextNode == f.Initializers.FirstOrDefault() && IsMatchingAssignment(v, out _)) {
+						// Special case: the initializer of a ForStatement can also declare a variable (with scope local to the for loop).
 						break;
+					}
 					v.InsertionPoint = v.InsertionPoint.Up();
 				}
-				
+				// Note: 'out var', pattern matching etc. is not considered a valid insertion point here, because the scope of the
+				// resulting variable is not restricted to the parent node of the insertion point, but extends to the whole BlockStatement.
+				// We moved up the insertion point to the whole BlockStatement so that we can resolve collisions,
+				// later we might decide to declare the variable more locally (as 'out var') instead if still possible.
+
 				// Go through all potentially colliding variables:
 				foreach (var prev in multiDict[v.Name]) {
 					if (prev.RemovedDueToCollision)
@@ -336,14 +391,20 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 					Debug.Assert(point1.level == point2.level);
 					if (point1.nextNode.Parent == point2.nextNode.Parent) {
 						// We found a collision!
+						v.InvolvedInCollision = true;
 						prev.ReplacementDueToCollision = v;
 						// Continue checking other entries in multiDict against the new position of `v`.
 						if (prev.SourceOrder < v.SourceOrder) {
-							// If we switch v's insertion point to prev's insertion point,
-							// we also need to copy prev's SourceOrder value.
+							// Switch v's insertion point to prev's insertion point:
 							v.InsertionPoint = point1;
+							// Since prev was first, it has the correct SourceOrder/FirstUse values
+							// for the new combined variable:
 							v.SourceOrder = prev.SourceOrder;
+							v.FirstUse = prev.FirstUse;
 						} else {
+							// v is first in source order, so it keeps its old insertion point
+							// (and other properties), except that the insertion point is
+							// moved up to prev's level.
 							v.InsertionPoint = point2;
 						}
 						v.DefaultInitialization |= prev.DefaultInitialization;
@@ -359,30 +420,46 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 
 		bool IsMatchingAssignment(VariableToDeclare v, out AssignmentExpression assignment)
 		{
-			assignment = v.InsertionPoint.nextNode as AssignmentExpression ?? (v.InsertionPoint.nextNode as ExpressionStatement)?.Expression as AssignmentExpression;
-			Expression expectedExpr = new IdentifierExpression(v.Name);
-			if (v.Type.Kind == TypeKind.ByReference) {
-				expectedExpr = new DirectionExpression(FieldDirection.Ref, expectedExpr);
+			assignment = v.InsertionPoint.nextNode as AssignmentExpression;
+			if (assignment == null) {
+				assignment = (v.InsertionPoint.nextNode as ExpressionStatement)?.Expression as AssignmentExpression;
+				if (assignment == null)
+					return false;
 			}
-			if (assignment != null && assignment.Operator == AssignmentOperatorType.Assign && assignment.Left.IsMatch(expectedExpr))
-				return true;
-			return false;
+			return assignment.Operator == AssignmentOperatorType.Assign
+				&& assignment.Left is IdentifierExpression identExpr
+				&& identExpr.Identifier == v.Name
+				&& identExpr.TypeArguments.Count == 0;
+		}
+
+		bool CombineDeclarationAndInitializer(VariableToDeclare v, TransformContext context)
+		{
+			if (v.Type.IsByRefLike)
+				return true; // by-ref-like variables always must be initialized at their declaration.
+
+			if (v.InsertionPoint.nextNode.Role == ForStatement.InitializerRole)
+				return true; // for-statement initializers always should combine declaration and initialization.
+
+			return !context.Settings.SeparateLocalVariableDeclarations;
 		}
 
 		void InsertVariableDeclarations(TransformContext context)
 		{
-			var replacements = new List<KeyValuePair<AstNode, AstNode>>();
-			foreach (var p in variableDict) {
-				var v = p.Value;
+			var replacements = new List<(AstNode, AstNode)>();
+			foreach (var (ilVariable, v) in variableDict) {
 				if (v.RemovedDueToCollision)
 					continue;
-				
-				if (IsMatchingAssignment(v, out AssignmentExpression assignment)) {
+
+				if (CombineDeclarationAndInitializer(v, context) && IsMatchingAssignment(v, out AssignmentExpression assignment)) {
+					// 'int v; v = expr;' can be combined to 'int v = expr;'
 					AstType type;
 					if (context.Settings.AnonymousTypes && v.Type.ContainsAnonymousType()) {
 						type = new SimpleType("var");
 					} else {
 						type = context.TypeSystemAstBuilder.ConvertType(v.Type);
+					}
+					if (v.ILVariable.IsRefReadOnly && type is ComposedType composedType && composedType.HasRefSpecifier) {
+						composedType.HasReadOnlySpecifier = true;
 					}
 					var vds = new VariableDeclarationStatement(type, v.Name, assignment.Right.Detach());
 					var init = vds.Variables.Single();
@@ -392,15 +469,38 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 							init.AddAnnotation(annotation);
 						}
 					}
-					replacements.Add(new KeyValuePair<AstNode, AstNode>(v.InsertionPoint.nextNode, vds));
+					replacements.Add((v.InsertionPoint.nextNode, vds));
+				} else if (CanBeDeclaredAsOutVariable(v, out var dirExpr)) {
+					// 'T v; SomeCall(out v);' can be combined to 'SomeCall(out var v);'
+					AstType type;
+					if (context.Settings.AnonymousTypes && v.Type.ContainsAnonymousType()) {
+						type = new SimpleType("var");
+					} else {
+						type = context.TypeSystemAstBuilder.ConvertType(v.Type);
+					}
+					string name;
+					// Variable is not used and discards are allowed, we can simplify this to 'out var _'.
+					// TODO : if there are no other (non-out) variables named '_' and type is 'var', we can simplify this to 'out _'.
+					// However, this needs overload resolution, so we currently cannot do that, as OR does not yet understand out var.
+					// (for the specific rules see https://github.com/dotnet/roslyn/blob/master/docs/features/discards.md)
+					if (context.Settings.Discards && v.ILVariable.LoadCount == 0 && v.ILVariable.StoreCount == 0 && v.ILVariable.AddressCount == 1) {
+						name = "_";
+					} else {
+						name = v.Name;
+					}
+					var ovd = new OutVarDeclarationExpression(type, name);
+					ovd.Variable.AddAnnotation(new ILVariableResolveResult(ilVariable));
+					ovd.CopyAnnotationsFrom(dirExpr);
+					replacements.Add((dirExpr, ovd));
 				} else {
+					// Insert a separate declaration statement.
 					Expression initializer = null;
 					AstType type = context.TypeSystemAstBuilder.ConvertType(v.Type);
 					if (v.DefaultInitialization) {
 						initializer = new DefaultValueExpression(type.Clone());
 					}
 					var vds = new VariableDeclarationStatement(type, v.Name, initializer);
-					vds.Variables.Single().AddAnnotation(new ILVariableResolveResult(p.Key, p.Key.Type));
+					vds.Variables.Single().AddAnnotation(new ILVariableResolveResult(ilVariable));
 					Debug.Assert(v.InsertionPoint.nextNode.Role == BlockStatement.StatementRole);
 					v.InsertionPoint.nextNode.Parent.InsertChildBefore(
 						v.InsertionPoint.nextNode,
@@ -409,9 +509,33 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 				}
 			}
 			// perform replacements at end, so that we don't replace a node while it is still referenced by a VariableToDeclare
-			foreach (var pair in replacements) {
-				pair.Key.ReplaceWith(pair.Value);
+			foreach (var (oldNode, newNode) in replacements) {
+				oldNode.ReplaceWith(newNode);
 			}
+		}
+
+		private bool CanBeDeclaredAsOutVariable(VariableToDeclare v, out DirectionExpression dirExpr)
+		{
+			dirExpr = v.FirstUse.Parent as DirectionExpression;
+			if (dirExpr == null || dirExpr.FieldDirection != FieldDirection.Out)
+				return false;
+			if (!context.Settings.OutVariables)
+				return false;
+			if (v.DefaultInitialization)
+				return false;
+			for (AstNode node = v.FirstUse; node != null; node = node.Parent) {
+				if (node.Role == Roles.EmbeddedStatement) {
+					return false;
+				}
+				switch (node) {
+					case IfElseStatement _:  // variable declared in if condition appears in parent scope
+					case ExpressionStatement _:
+						return node == v.InsertionPoint.nextNode;
+					case Statement _:
+						return false; // other statements (e.g. while) don't allow variables to be promoted to parent scope
+				}
+			}
+			return false;
 		}
 
 		/// <summary>

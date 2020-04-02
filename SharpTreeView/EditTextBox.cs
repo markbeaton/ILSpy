@@ -64,12 +64,12 @@ namespace ICSharpCode.TreeView
 			}
 		}
 
-		bool commiting;
+		bool committing;
 
 		void Commit()
 		{
-			if (!commiting) {
-				commiting = true;
+			if (!committing) {
+				committing = true;
 
 				Node.IsEditing = false;
 				if (!Node.SaveEditText(Text)) {
@@ -85,7 +85,7 @@ namespace ICSharpCode.TreeView
 				//    Init();
 				//}
 
-				commiting = false;
+				committing = false;
 			}
 		}
 	}

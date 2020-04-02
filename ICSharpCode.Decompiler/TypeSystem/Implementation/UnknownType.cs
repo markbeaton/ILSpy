@@ -17,6 +17,7 @@
 // DEALINGS IN THE SOFTWARE.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 
 namespace ICSharpCode.Decompiler.TypeSystem.Implementation
@@ -29,27 +30,30 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 	{
 		readonly bool namespaceKnown;
 		readonly FullTypeName fullTypeName;
-		
+		readonly bool? isReferenceType = null;
+
 		/// <summary>
 		/// Creates a new unknown type.
 		/// </summary>
 		/// <param name="namespaceName">Namespace name, if known. Can be null if unknown.</param>
 		/// <param name="name">Name of the type, must not be null.</param>
 		/// <param name="typeParameterCount">Type parameter count, zero if unknown.</param>
-		public UnknownType(string namespaceName, string name, int typeParameterCount = 0)
+		public UnknownType(string namespaceName, string name, int typeParameterCount = 0, bool? isReferenceType = null)
 		{
 			if (name == null)
-				throw new ArgumentNullException("name");
+				throw new ArgumentNullException(nameof(name));
 			this.namespaceKnown = namespaceName != null;
 			this.fullTypeName = new TopLevelTypeName(namespaceName ?? string.Empty, name, typeParameterCount);
+			this.isReferenceType = isReferenceType;
 		}
 		
 		/// <summary>
 		/// Creates a new unknown type.
 		/// </summary>
 		/// <param name="fullTypeName">Full name of the unknown type.</param>
-		public UnknownType(FullTypeName fullTypeName)
+		public UnknownType(FullTypeName fullTypeName, bool? isReferenceType = null)
 		{
+			this.isReferenceType = isReferenceType;
 			if (fullTypeName.Name == null) {
 				Debug.Assert(fullTypeName == default(FullTypeName));
 				this.namespaceKnown = false;
@@ -64,15 +68,10 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			get { return TypeKind.Unknown; }
 		}
 		
-		public override ITypeReference ToTypeReference()
-		{
-			return this;
-		}
-		
 		IType ITypeReference.Resolve(ITypeResolveContext context)
 		{
 			if (context == null)
-				throw new ArgumentNullException("context");
+				throw new ArgumentNullException(nameof(context));
 			return this;
 		}
 		
@@ -88,14 +87,22 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			get { return namespaceKnown ? fullTypeName.ReflectionName : "?"; }
 		}
 		
-		public override int TypeParameterCount {
-			get { return fullTypeName.TypeParameterCount; }
-		}
-		
+		public override int TypeParameterCount => fullTypeName.TypeParameterCount;
+		public override IReadOnlyList<ITypeParameter> TypeParameters => DummyTypeParameter.GetClassTypeParameterList(TypeParameterCount);
+		public override IReadOnlyList<IType> TypeArguments => TypeParameters;
+
 		public override bool? IsReferenceType {
-			get { return null; }
+			get { return isReferenceType; }
 		}
-		
+
+		public override IType ChangeNullability(Nullability nullability)
+		{
+			if (nullability == Nullability.Oblivious)
+				return this;
+			else
+				return new NullabilityAnnotatedType(this, nullability);
+		}
+
 		public override int GetHashCode()
 		{
 			return (namespaceKnown ? 812571 : 12651) ^ fullTypeName.GetHashCode();
@@ -106,7 +113,7 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			UnknownType o = other as UnknownType;
 			if (o == null)
 				return false;
-			return this.namespaceKnown == o.namespaceKnown && this.fullTypeName == o.fullTypeName;
+			return this.namespaceKnown == o.namespaceKnown && this.fullTypeName == o.fullTypeName && this.isReferenceType == o.isReferenceType;
 		}
 		
 		public override string ToString()

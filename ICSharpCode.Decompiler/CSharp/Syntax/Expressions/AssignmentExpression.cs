@@ -202,6 +202,37 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 					throw new NotSupportedException("Invalid value for AssignmentOperatorType");
 			}
 		}
+
+		public static AssignmentOperatorType? GetAssignmentOperatorTypeFromExpressionType(ExpressionType expressionType)
+		{
+			switch (expressionType) {
+				case ExpressionType.AddAssign:
+				case ExpressionType.AddAssignChecked:
+					return AssignmentOperatorType.Add;
+				case ExpressionType.AndAssign:
+					return AssignmentOperatorType.BitwiseAnd;
+				case ExpressionType.DivideAssign:
+					return AssignmentOperatorType.Divide;
+				case ExpressionType.ExclusiveOrAssign:
+					return AssignmentOperatorType.ExclusiveOr;
+				case ExpressionType.LeftShiftAssign:
+					return AssignmentOperatorType.ShiftLeft;
+				case ExpressionType.ModuloAssign:
+					return AssignmentOperatorType.Modulus;
+				case ExpressionType.MultiplyAssign:
+				case ExpressionType.MultiplyAssignChecked:
+					return AssignmentOperatorType.Multiply;
+				case ExpressionType.OrAssign:
+					return AssignmentOperatorType.BitwiseOr;
+				case ExpressionType.RightShiftAssign:
+					return AssignmentOperatorType.ShiftRight;
+				case ExpressionType.SubtractAssign:
+				case ExpressionType.SubtractAssignChecked:
+					return AssignmentOperatorType.Subtract;
+				default:
+					return null;
+			}
+		}
 	}
 	
 	public enum AssignmentOperatorType
@@ -219,13 +250,13 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		Divide,
 		/// <summary>left %= right</summary>
 		Modulus,
-		
-		/// <summary>left <<= right</summary>
+
+		/// <summary>left &lt;&lt;= right</summary>
 		ShiftLeft,
 		/// <summary>left >>= right</summary>
 		ShiftRight,
 		
-		/// <summary>left &= right</summary>
+		/// <summary>left &amp;= right</summary>
 		BitwiseAnd,
 		/// <summary>left |= right</summary>
 		BitwiseOr,

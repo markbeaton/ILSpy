@@ -21,6 +21,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using ICSharpCode.Decompiler.IL.ControlFlow;
 using ICSharpCode.Decompiler.Util;
 
 namespace ICSharpCode.Decompiler.IL.Transforms
@@ -41,53 +42,63 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				if (loop.Kind != ContainerKind.Loop)
 					continue;
 				if (MatchWhileLoop(loop, out var condition, out var loopBody)) {
-					MatchForLoop(loop, condition, loopBody);
+					if (context.Settings.ForStatement)
+						MatchForLoop(loop, condition, loopBody);
 					continue;
 				}
-				if (MatchDoWhileLoop(loop))
+				if (context.Settings.DoWhileStatement && MatchDoWhileLoop(loop))
 					continue;
 			}
 		}
 
 		bool MatchWhileLoop(BlockContainer loop, out IfInstruction condition, out Block loopBody)
 		{
+			// ConditionDetection favours leave inside if and branch at end of block
 			// while-loop:
-			// if (loop-condition) br loop-content-block
-			// leave loop-container
-			// -or-
-			// if (loop-condition) block content-block
-			// leave loop-container
+			// if (!loop-condition) leave loop-container
+			// ...
 			condition = null;
-			loopBody = null;
-			if (loop.EntryPoint.Instructions.Count != 2)
+			loopBody = loop.EntryPoint;
+			if (!(loopBody.Instructions[0] is IfInstruction ifInstruction))
 				return false;
-			if (!(loop.EntryPoint.Instructions[0] is IfInstruction ifInstruction))
-				return false;
+
 			if (!ifInstruction.FalseInst.MatchNop())
 				return false;
+
 			if (UsesVariableCapturedInLoop(loop, ifInstruction.Condition))
 				return false;
+
 			condition = ifInstruction;
-			var trueInst = ifInstruction.TrueInst;
-			if (!loop.EntryPoint.Instructions[1].MatchLeave(loop))
-				return false;
-			if (trueInst is Block b) {
-				context.Step("Transform to while (condition) loop", loop);
-				// move the loop body to its own block:
-				loopBody = b;
-				trueInst.ReplaceWith(new Branch(loopBody));
-				loop.Blocks.Insert(1, loopBody);
-				// sometimes the loop-content-block does not end with a leave/branch
-				if (!loopBody.HasFlag(InstructionFlags.EndPointUnreachable))
-					loopBody.Instructions.Add(new Leave(loop));
-			} else if (trueInst is Branch br) {
-				context.Step("Transform to while (condition) loop", loop);
-				loopBody = br.TargetBlock;
-			} else {
-				return false;
+			if (!ifInstruction.TrueInst.MatchLeave(loop)) {
+				// sometimes the loop-body is nested within the if
+				// if (loop-condition) { loop-body }
+				// leave loop-container
+
+				if (loopBody.Instructions.Count != 2 || !loop.EntryPoint.Instructions.Last().MatchLeave(loop))
+					return false;
+				
+				if (!ifInstruction.TrueInst.HasFlag(InstructionFlags.EndPointUnreachable))
+					((Block)ifInstruction.TrueInst).Instructions.Add(new Leave(loop));
+
+				ConditionDetection.InvertIf(loopBody, ifInstruction, context);
 			}
+			
+			context.Step("Transform to while (condition) loop: " + loop.EntryPoint.Label, loop);
+			loop.Kind = ContainerKind.While;
+			//invert comparison
+			ifInstruction.Condition = Comp.LogicNot(ifInstruction.Condition);
+			ifInstruction.FalseInst = ifInstruction.TrueInst;
+			//move the rest of the body into a new block
+			loopBody = ConditionDetection.ExtractBlock(loop.EntryPoint, 1, loop.EntryPoint.Instructions.Count);
+			loop.Blocks.Insert(1, loopBody);
+			if (!loopBody.HasFlag(InstructionFlags.EndPointUnreachable))
+				loopBody.Instructions.Add(new Leave(loop));
+
+			ifInstruction.TrueInst = new Branch(loopBody);
+			ExpressionTransforms.RunOnSingleStatement(ifInstruction, context);
+			
 			// Analyze conditions and decide whether to move some of them out of the condition block:
-			var conditions = new List<ILInstruction>();
+			/*var conditions = new List<ILInstruction>();
 			SplitConditions(condition.Condition, conditions);
 			// Break apart conditions that could be a MoveNext call followed by a Current accessor call:
 			if (MightBeHeaderOfForEach(loop, conditions)) {
@@ -97,30 +108,8 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 					loopBody.Instructions.Insert(0, inst = new IfInstruction(Comp.LogicNot(cond), new Leave(loop)));
 					ExpressionTransforms.RunOnSingleStatment(inst, context);
 				}
-			}
-			// move the branch/leave instruction into the condition block
-			ifInstruction.FalseInst = loop.EntryPoint.Instructions[1];
-			loop.EntryPoint.Instructions.RemoveAt(1);
-			loop.Kind = ContainerKind.While;
-			// Invert condition and unwrap nested block, if loop ends in a break or return statement preceeded by an IfInstruction.
-			while (loopBody.Instructions.Last() is Leave leave && loopBody.Instructions.SecondToLastOrDefault() is IfInstruction nestedIf && nestedIf.FalseInst.MatchNop()) {
-				switch (nestedIf.TrueInst) {
-					case Block nestedBlock:
-						loopBody.Instructions.RemoveAt(leave.ChildIndex);
-						loopBody.Instructions.AddRange(nestedBlock.Instructions);
-						break;
-					case Branch br:
-						leave.ReplaceWith(nestedIf.TrueInst);
-						break;
-					default:
-						return true;
-				}
-				nestedIf.Condition = Comp.LogicNot(nestedIf.Condition);
-				nestedIf.TrueInst = leave;
-				ExpressionTransforms.RunOnSingleStatment(nestedIf, context);
-				if (!loopBody.HasFlag(InstructionFlags.EndPointUnreachable))
-					loopBody.Instructions.Add(new Leave(loop));
-			}
+			}*/
+			
 			return true;
 		}
 
@@ -162,7 +151,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 			// not a do-while loop, exit.
 			if (conditions == null || conditions.Count == 0)
 				return false;
-			context.Step("Transform to do-while loop", loop);
+			context.Step("Transform to do-while loop: " + loop.EntryPoint.Label, loop);
 			Block conditionBlock;
 			// first we remove all extracted instructions from the original block.
 			var originalBlock = (Block)exit.Parent;
@@ -178,7 +167,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				returnCondition.Condition = Comp.LogicNot(returnCondition.Condition);
 				returnCondition.TrueInst = leaveFunction;
 				// simplify the condition:
-				ExpressionTransforms.RunOnSingleStatment(returnCondition, context);
+				ExpressionTransforms.RunOnSingleStatement(returnCondition, context);
 				topLevelBlock.Instructions.RemoveAt(returnCondition.ChildIndex + 1);
 				topLevelBlock.Instructions.AddRange(originalBlock.Instructions);
 				originalBlock = topLevelBlock;
@@ -198,9 +187,9 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 			}
 			// combine all conditions and the exit instruction into one IfInstruction:
 			IfInstruction condition = null;
-			conditionBlock.AddILRange(exit.ILRange);
+			conditionBlock.AddILRange(exit);
 			foreach (var inst in conditions) {
-				conditionBlock.AddILRange(inst.ILRange);
+				conditionBlock.AddILRange(inst);
 				if (condition == null) {
 					condition = inst;
 					if (swap) {
@@ -222,7 +211,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 			// insert the combined conditions into the condition block:
 			conditionBlock.Instructions.Add(condition);
 			// simplify the condition:
-			ExpressionTransforms.RunOnSingleStatment(condition, context);
+			ExpressionTransforms.RunOnSingleStatement(condition, context);
 			// transform complete
 			loop.Kind = ContainerKind.DoWhile;
 			return true;
@@ -331,6 +320,30 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 			return true;
 		}
 
+		// early match before block containers have been constructed
+		internal static bool MatchDoWhileConditionBlock(Block block, out Block target1, out Block target2)
+		{
+			target1 = target2 = null;
+			if (block.Instructions.Count < 2)
+				return false;
+
+			var last = block.Instructions.Last();
+			if (!(block.Instructions.SecondToLastOrDefault() is IfInstruction ifInstruction) || !ifInstruction.FalseInst.MatchNop())
+				return false;
+
+			return (ifInstruction.TrueInst.MatchBranch(out target1) || ifInstruction.TrueInst.MatchReturn(out var _)) &&
+			       (last.MatchBranch(out target2) || last.MatchReturn(out var _));
+		}
+
+		internal static Block GetIncrementBlock(BlockContainer loop, Block whileLoopBody) => 
+			loop.Blocks.SingleOrDefault(b => b != whileLoopBody
+			                              && b.Instructions.Last().MatchBranch(loop.EntryPoint)
+			                              && b.Instructions.SkipLast(1).All(IsSimpleStatement));
+
+		internal static bool MatchIncrementBlock(Block block, out Block loopHead) =>
+			block.Instructions.Last().MatchBranch(out loopHead) 
+			&& block.Instructions.SkipLast(1).All(IsSimpleStatement);
+
 		bool MatchForLoop(BlockContainer loop, IfInstruction whileCondition, Block whileLoopBody)
 		{
 			// for loops have exactly two incoming edges at the entry point.
@@ -338,10 +351,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				return false;
 			// try to find an increment block:
 			// consists of simple statements only.
-			var incrementBlock = loop.Blocks.SingleOrDefault(
-				b => b != whileLoopBody
-					 && b.Instructions.Last().MatchBranch(loop.EntryPoint)
-					 && b.Instructions.SkipLast(1).All(IsSimpleStatement));
+			var incrementBlock = GetIncrementBlock(loop, whileLoopBody);
 			if (incrementBlock != null) {
 				// we found a possible increment block, just make sure, that there are at least three blocks:
 				// - condition block
@@ -349,7 +359,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				// - increment block
 				if (incrementBlock.Instructions.Count <= 1 || loop.Blocks.Count < 3)
 					return false;
-				context.Step("Transform to for loop", loop);
+				context.Step("Transform to for loop: " + loop.EntryPoint.Label, loop);
 				// move the block to the end of the loop:
 				loop.Blocks.MoveElementToEnd(incrementBlock);
 				loop.Kind = ContainerKind.For;
@@ -389,14 +399,14 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				}
 				if (numberOfConditions == 0)
 					return false;
-				context.Step("Transform to for loop", loop);
+				context.Step("Transform to for loop: " + loop.EntryPoint.Label, loop);
 				// split condition block:
 				whileCondition.ReplaceWith(forCondition);
-				ExpressionTransforms.RunOnSingleStatment(forCondition, context);
+				ExpressionTransforms.RunOnSingleStatement(forCondition, context);
 				for (int i = conditions.Count - 1; i >= numberOfConditions; i--) {
 					IfInstruction inst;
 					whileLoopBody.Instructions.Insert(0, inst = new IfInstruction(Comp.LogicNot(conditions[i]), new Leave(loop)));
-					ExpressionTransforms.RunOnSingleStatment(inst, context);
+					ExpressionTransforms.RunOnSingleStatement(inst, context);
 				}
 				// create a new increment block and add it at the end:
 				int secondToLastIndex = secondToLast.ChildIndex;
@@ -405,7 +415,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				// move the increment instruction:
 				newIncremenBlock.Instructions.Add(secondToLast);
 				newIncremenBlock.Instructions.Add(last);
-				newIncremenBlock.AddILRange(secondToLast.ILRange);
+				newIncremenBlock.AddILRange(secondToLast);
 				whileLoopBody.Instructions.RemoveRange(secondToLastIndex, 2);
 				whileLoopBody.Instructions.Add(new Branch(newIncremenBlock));
 				// complete transform.
@@ -425,18 +435,18 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 
 		/// <summary>
 		/// Returns true if the instruction is stloc v(add(ldloc v, arg))
-		/// or stloc v(compound.assign(ldloc v, arg))
+		/// or compound.assign(ldloca v, arg)
 		/// </summary>
 		public static bool MatchIncrement(ILInstruction inst, out ILVariable variable)
 		{
-			if (!inst.MatchStLoc(out variable, out var value))
-				return false;
-			if (!value.MatchBinaryNumericInstruction(BinaryNumericOperator.Add, out var left, out var right)) {
-				if (value is CompoundAssignmentInstruction cai) {
-					left = cai.Target;
-				} else return false;
+			if (inst.MatchStLoc(out variable, out var value)) {
+				if (value.MatchBinaryNumericInstruction(BinaryNumericOperator.Add, out var left, out var right)) {
+					return left.MatchLdLoc(variable);
+				}
+			} else if (inst is CompoundAssignmentInstruction cai) {
+				return cai.TargetKind == CompoundTargetKind.Address && cai.Target.MatchLdLoca(out variable);
 			}
-			return left.MatchLdLoc(variable);
+			return false;
 		}
 
 		/// <summary>
@@ -451,7 +461,8 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				case OpCode.NewObj:
 				case OpCode.StLoc:
 				case OpCode.StObj:
-				case OpCode.CompoundAssignmentInstruction:
+				case OpCode.NumericCompoundAssign:
+				case OpCode.UserDefinedCompoundAssign:
 					return true;
 				default:
 					return false;

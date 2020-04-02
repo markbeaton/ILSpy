@@ -18,7 +18,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
+using System.Reflection.Metadata;
 using ICSharpCode.Decompiler.Semantics;
 using ICSharpCode.Decompiler.Util;
 
@@ -30,35 +32,33 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 	public class DefaultAttribute : IAttribute
 	{
 		readonly IType attributeType;
-		readonly IList<ResolveResult> positionalArguments;
-		readonly IList<KeyValuePair<IMember, ResolveResult>> namedArguments;
-		readonly DomRegion region;
 		volatile IMethod constructor;
-		
-		public DefaultAttribute(IType attributeType, IList<ResolveResult> positionalArguments = null,
-		                        IList<KeyValuePair<IMember, ResolveResult>> namedArguments = null,
-		                        DomRegion region = default(DomRegion))
+
+		public ImmutableArray<CustomAttributeTypedArgument<IType>> FixedArguments { get; }
+		public ImmutableArray<CustomAttributeNamedArgument<IType>> NamedArguments { get; }
+
+		public DefaultAttribute(IType attributeType,
+			ImmutableArray<CustomAttributeTypedArgument<IType>> fixedArguments,
+			ImmutableArray<CustomAttributeNamedArgument<IType>> namedArguments)
 		{
 			if (attributeType == null)
-				throw new ArgumentNullException("attributeType");
+				throw new ArgumentNullException(nameof(attributeType));
 			this.attributeType = attributeType;
-			this.positionalArguments = positionalArguments ?? EmptyList<ResolveResult>.Instance;
-			this.namedArguments = namedArguments ?? EmptyList<KeyValuePair<IMember, ResolveResult>>.Instance;
-			this.region = region;
+			this.FixedArguments = fixedArguments;
+			this.NamedArguments = namedArguments;
 		}
-		
-		public DefaultAttribute(IMethod constructor, IList<ResolveResult> positionalArguments = null,
-		                        IList<KeyValuePair<IMember, ResolveResult>> namedArguments = null,
-		                        DomRegion region = default(DomRegion))
+
+		public DefaultAttribute(IMethod constructor,
+			ImmutableArray<CustomAttributeTypedArgument<IType>> fixedArguments,
+			ImmutableArray<CustomAttributeNamedArgument<IType>> namedArguments)
 		{
 			if (constructor == null)
-				throw new ArgumentNullException("constructor");
+				throw new ArgumentNullException(nameof(constructor));
 			this.constructor = constructor;
 			this.attributeType = constructor.DeclaringType ?? SpecialType.UnknownType;
-			this.positionalArguments = positionalArguments ?? EmptyList<ResolveResult>.Instance;
-			this.namedArguments = namedArguments ?? EmptyList<KeyValuePair<IMember, ResolveResult>>.Instance;
-			this.region = region;
-			if (this.positionalArguments.Count != constructor.Parameters.Count) {
+			this.FixedArguments = fixedArguments;
+			this.NamedArguments = namedArguments;
+			if (fixedArguments.Length != constructor.Parameters.Count) {
 				throw new ArgumentException("Positional argument count must match the constructor's parameter count");
 			}
 		}
@@ -66,17 +66,15 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 		public IType AttributeType {
 			get { return attributeType; }
 		}
-		
-		public DomRegion Region {
-			get { return region; }
-		}
-		
+
+		bool IAttribute.HasDecodeErrors => false;
+
 		public IMethod Constructor {
 			get {
 				IMethod ctor = this.constructor;
 				if (ctor == null) {
-					foreach (IMethod candidate in this.AttributeType.GetConstructors(m => m.Parameters.Count == positionalArguments.Count)) {
-						if (candidate.Parameters.Select(p => p.Type).SequenceEqual(this.PositionalArguments.Select(a => a.Type))) {
+					foreach (IMethod candidate in this.AttributeType.GetConstructors(m => m.Parameters.Count == FixedArguments.Length)) {
+						if (candidate.Parameters.Select(p => p.Type).SequenceEqual(this.FixedArguments.Select(a => a.Type))) {
 							ctor = candidate;
 							break;
 						}
@@ -85,14 +83,6 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 				}
 				return ctor;
 			}
-		}
-		
-		public IList<ResolveResult> PositionalArguments {
-			get { return positionalArguments; }
-		}
-		
-		public IList<KeyValuePair<IMember, ResolveResult>> NamedArguments {
-			get { return namedArguments; }
 		}
 	}
 }

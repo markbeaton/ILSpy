@@ -18,7 +18,7 @@
 
 using System;
 using ICSharpCode.Decompiler;
-using Mono.Cecil;
+using ICSharpCode.Decompiler.Metadata;
 
 namespace ICSharpCode.ILSpy.TreeNodes
 {
@@ -27,33 +27,24 @@ namespace ICSharpCode.ILSpy.TreeNodes
 	/// </summary>
 	public sealed class AssemblyReferenceTreeNode : ILSpyTreeNode
 	{
-		readonly AssemblyNameReference r;
+		readonly AssemblyReference r;
 		readonly AssemblyTreeNode parentAssembly;
 		
-		public AssemblyReferenceTreeNode(AssemblyNameReference r, AssemblyTreeNode parentAssembly)
+		public AssemblyReferenceTreeNode(AssemblyReference r, AssemblyTreeNode parentAssembly)
 		{
-			if (parentAssembly == null)
-				throw new ArgumentNullException(nameof(parentAssembly));
-			if (r == null)
-				throw new ArgumentNullException(nameof(r));
-			this.r = r;
-			this.parentAssembly = parentAssembly;
+			this.r = r ?? throw new ArgumentNullException(nameof(r));
+			this.parentAssembly = parentAssembly ?? throw new ArgumentNullException(nameof(parentAssembly));
 			this.LazyLoading = true;
 		}
 
-		public AssemblyNameReference AssemblyNameReference
-		{
-			get { return r; }
-		}
-		
+		public IAssemblyReference AssemblyNameReference => r;
+
 		public override object Text {
-			get { return r.Name + r.MetadataToken.ToSuffixString(); }
+			get { return r.Name + ((System.Reflection.Metadata.EntityHandle)r.Handle).ToSuffixString(); }
 		}
-		
-		public override object Icon {
-			get { return Images.Assembly; }
-		}
-		
+
+		public override object Icon => Images.Assembly;
+
 		public override bool ShowExpander {
 			get {
 				if (r.Name == "mscorlib")
@@ -77,7 +68,7 @@ namespace ICSharpCode.ILSpy.TreeNodes
 			if (assemblyListNode != null) {
 				var refNode = assemblyListNode.FindAssemblyNode(parentAssembly.LoadedAssembly.LookupReferencedAssembly(r));
 				if (refNode != null) {
-					ModuleDefinition module = refNode.LoadedAssembly.GetModuleDefinitionAsync().Result;
+					var module = refNode.LoadedAssembly.GetPEFileOrNull();
 					if (module != null) {
 						foreach (var childRef in module.AssemblyReferences)
 							this.Children.Add(new AssemblyReferenceTreeNode(childRef, refNode));
@@ -88,9 +79,9 @@ namespace ICSharpCode.ILSpy.TreeNodes
 		
 		public override void Decompile(Language language, ITextOutput output, DecompilationOptions options)
 		{
-			var loaded = parentAssembly.LoadedAssembly.LoadedAssemblyReferencesInfo.TryGetValue(r.FullName, out var info);
+			var loaded = parentAssembly.LoadedAssembly.LoadedAssemblyReferencesInfo.TryGetInfo(r.FullName, out var info);
 			if (r.IsWindowsRuntime) {
-				language.WriteCommentLine(output, r.Name + " [WinRT]" + (!loaded ? " (unresolved)" : ""));
+				language.WriteCommentLine(output, r.FullName + " [WinRT]" + (!loaded ? " (unresolved)" : ""));
 			} else {
 				language.WriteCommentLine(output, r.FullName + (!loaded ? " (unresolved)" : ""));
 			}

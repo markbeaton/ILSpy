@@ -20,6 +20,11 @@ using System;
 
 namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 {
+	internal class Box<T>
+	{
+		public readonly T Value;
+	}
+
 	public class CheckedUnchecked
 	{
 		public int Operators(int a, int b)
@@ -63,7 +68,7 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 		}
 		public void ObjectCreationInitializerChecked()
 		{
-			this.TestHelp(new {
+			TestHelp(new {
 				x = 0,
 				l = 0
 			}, n => checked(new {
@@ -74,7 +79,7 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 
 		public void ObjectCreationWithOneFieldChecked()
 		{
-			this.TestHelp(new {
+			TestHelp(new {
 				x = 0,
 				l = 0
 			}, n => new {
@@ -85,7 +90,7 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 
 		public void ArrayInitializerChecked()
 		{
-			this.TestHelp(new int[2] {
+			TestHelp(new int[2] {
 				1,
 				2
 			}, (int[] n) => checked(new int[2] {
@@ -102,6 +107,25 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 		public void CheckedInArrayCreationArgument(int a, int b)
 		{
 			Console.WriteLine(new int[checked(a + b)]);
+		}
+
+		public short Unbox(TypeCode c, object b)
+		{
+			checked {
+				switch (c) {
+					case TypeCode.Int32:
+						return (short)((Box<int>)b).Value;
+					case TypeCode.UInt32:
+						return (short)((Box<uint>)b).Value;
+					case TypeCode.Double: {
+						float num = (float)((Box<double>)b).Value;
+						Console.WriteLine(num);
+						return (short)num;
+					}
+					default:
+						throw new Exception();
+				}
+			}
 		}
 	}
 }
